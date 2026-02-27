@@ -1536,7 +1536,6 @@ function MapStealer:StealMap()
         
         local terrain = workspace.Terrain
         local terrainData = {
-            Smoothing = terrain.Smoothing,
             WaterColor = {terrain.WaterColor.R, terrain.WaterColor.G, terrain.WaterColor.B},
             WaterReflectance = terrain.WaterReflectance,
             WaterTransparency = terrain.WaterTransparency,
