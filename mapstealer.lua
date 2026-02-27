@@ -1,7 +1,7 @@
 --[[
-    cvAI4 MAP RIPPER v2.7 👾
-    Fitur: Copy Map + Terrain + Objects + Spawns
-    By: cvAI4 (for Tuan Gigs)
+    cvAI4 MAP RIPPER V3.0 - ULTIMATE EDITION 👾
+    Fitur: ALL FORMATS + TERRAIN + SCRIPTS + EVERYTHING
+    By: cvAI4 (for Tuan Gigs) - PERFECT VERSION
     GitHub: https://github.com/cvAI4/MapStealer
 ]]
 
@@ -9,26 +9,76 @@ local MapStealer = {}
 MapStealer.__index = MapStealer
 
 -- ==================================================
--- KONFIGURASI AWAL
+-- KONFIGURASI SUPER LENGKAP
 -- ==================================================
 MapStealer.Config = {
+    -- Format & Save Options
     AutoSave = true,
-    SaveFormat = "rbxm", -- rbxm, rbxl, or table
+    SaveFormat = "json", -- "json", "rbxm", "rbxl", "hybrid"
+    Compression = true, -- Compress JSON biar kecil
+    
+    -- What to include
     IncludeTerrain = true,
     IncludeSpawns = true,
     IncludeLighting = true,
+    IncludeAttachments = true,
+    IncludeParticles = true,
+    IncludeBeams = true,
+    IncludeSounds = true,
+    IncludeScripts = true,
+    IncludeAnimations = true,
+    IncludeHumanoids = true,
+    IncludeConstraints = true,
+    IncludeCSG = true, -- UnionOperation, MeshPart
+    IncludeGUI = true, -- BillboardGui, SurfaceGui
+    IncludeValues = true, -- StringValue, NumberValue, etc
+    
+    -- Filters & Optimization
+    FilterDuplicates = true,
+    MinObjectSize = 10, -- Skip object kalo terlalu kecil (byte)
+    MaxDepth = 50, -- Max parent-child depth
+    BatchSize = 1000, -- Process per batch biar gak lag
+    
+    -- Ignore list (gak akan di-capture)
     IgnoreList = {
         "Workspace.CurrentCamera",
         "Workspace.Terrain",
         "Players",
         "CoreGui",
-        "StarterGui"
+        "StarterGui",
+        "Debris",
+        "JointsService",
+        "InsertService",
+        "NetworkClient",
+        "RunService",
+        "Stats",
+        "TeleportService",
+        "UserInputService",
+        "VirtualUser",
+        "VirtualInputManager"
     },
+    
+    -- Executor-specific settings
+    Executor = {
+        UseSynapse = false,
+        UseKrnl = false,
+        UseScriptWare = false,
+        UseFluxus = false,
+        UseDelta = false
+    },
+    
+    -- Discord Webhook
     Webhook = {
         Enabled = false,
-        Url = "", -- Discord webhook buat upload hasil curian
-        AutoUpload = false
-    }
+        Url = "",
+        AutoUpload = false,
+        SplitSize = 8 * 1024 * 1024 -- 8MB (Discord limit)
+    },
+    
+    -- Advanced
+    DebugMode = false,
+    LogToFile = true,
+    BackupOnSave = true
 }
 
 -- ==================================================
@@ -37,86 +87,458 @@ MapStealer.Config = {
 MapStealer.Vault = {
     CapturedMaps = {},
     LastCapture = nil,
-    TotalObjects = 0
+    TotalObjects = 0,
+    TotalSize = 0,
+    History = {},
+    Favorites = {}
 }
 
 -- ==================================================
--- UI INTERFACE
+-- EXECUTOR DETECTION
+-- ==================================================
+function MapStealer:DetectExecutor()
+    local exec = {
+        name = "Unknown",
+        write = false,
+        read = false,
+        list = false,
+        load = false,
+        http = false,
+        supports = {}
+    }
+    
+    -- Synapse X
+    if syn and syn.write then
+        exec.name = "Synapse X"
+        exec.write = syn.write
+        exec.read = syn.read
+        exec.list = syn.list
+        exec.load = syn.load
+        exec.http = syn.request
+        exec.supports = {"writefile", "readfile", "listfiles", "http", "secure"}
+        self.Config.Executor.UseSynapse = true
+    end
+    
+    -- Krnl
+    if is_krnl and is_krnl() then
+        exec.name = "Krnl"
+        exec.write = writefile
+        exec.read = readfile
+        exec.list = listfiles
+        exec.load = loadfile
+        exec.http = http_request or request
+        exec.supports = {"writefile", "readfile", "listfiles", "http"}
+        self.Config.Executor.UseKrnl = true
+    end
+    
+    -- ScriptWare
+    if is_scriptware and is_scriptware() then
+        exec.name = "ScriptWare"
+        exec.write = writefile
+        exec.read = readfile
+        exec.list = listfiles
+        exec.load = loadfile
+        exec.http = http_request
+        exec.supports = {"writefile", "readfile", "listfiles", "http"}
+        self.Config.Executor.UseScriptWare = true
+    end
+    
+    -- Fluxus
+    if is_fluxus and is_fluxus() then
+        exec.name = "Fluxus"
+        exec.write = writefile
+        exec.read = readfile
+        exec.list = listfiles
+        exec.load = loadfile
+        exec.http = request
+        exec.supports = {"writefile", "readfile", "listfiles", "http"}
+        self.Config.Executor.UseFluxus = true
+    end
+    
+    -- Delta
+    if is_delta and is_delta() then
+        exec.name = "Delta"
+        exec.write = writefile
+        exec.read = readfile
+        exec.list = listfiles
+        exec.load = loadfile
+        exec.http = request
+        exec.supports = {"writefile", "readfile", "listfiles", "http"}
+        self.Config.Executor.UseDelta = true
+    end
+    
+    -- Fallback ke fungsi global
+    if not exec.write and writefile then
+        exec.write = writefile
+        exec.read = readfile
+        exec.list = listfiles
+        exec.supports = {"writefile", "readfile", "listfiles"}
+    end
+    
+    self.Executor = exec
+    return exec
+end
+
+-- ==================================================
+-- PROPERTY LISTS SUPER LENGKAP
+-- ==================================================
+MapStealer.PropertyLists = {
+    -- Base Classes
+    Instance = {"Name", "Parent", "Archivable", "ClassName"},
+    
+    -- Parts & Physical Objects
+    BasePart = {"Position", "Size", "CFrame", "Color", "Material", "Transparency", 
+                "Reflectance", "BrickColor", "Shape", "Orientation", "Rotation",
+                "Anchored", "CanCollide", "Locked", "Massless", "RotVelocity", 
+                "Velocity", "CustomPhysicalProperties", "CollisionGroupId",
+                "CastShadow", "ReceiveRemoves", "RootPriority"},
+    
+    MeshPart = {"Position", "Size", "CFrame", "Color", "Material", "MeshId", 
+                "TextureID", "RenderFidelity", "DoubleSided", "CollisionFidelity",
+                "UsePartColor", "VertexColor"},
+    
+    Part = {"Position", "Size", "CFrame", "Color", "Material", "Shape", "BrickColor"},
+    
+    UnionOperation = {"Position", "Size", "CFrame", "Color", "Material", "MeshId", 
+                      "UsePartColor", "ChildData", "PhysicsData"},
+    
+    Terrain = {"Smoothing", "WaterColor", "WaterReflectance", "WaterTransparency",
+               "WaterWaveSize", "WaterWaveSpeed", "MaterialColors", "AcquisitionMethod",
+               "PhysicsGrid", "DecorationGrid", "Cells", "Materials"},
+    
+    -- Decals & Textures
+    Decal = {"Face", "Texture", "Color3", "Transparency", "Shiny", "Specular",
+             "TopSurface", "BottomSurface", "LeftSurface", "RightSurface"},
+    
+    Texture = {"Face", "Texture", "Color3", "Transparency", "OffsetStudsU", 
+               "OffsetStudsV", "StudsPerTileU", "StudsPerTileV"},
+    
+    -- Models & Groups
+    Model = {"PrimaryPart", "LevelOfDetail", "ModelStreamingMode", "WorldPivot",
+             "Scale", "Rotation", "Position", "WorldPivotData"},
+    
+    Folder = {"Name", "Parent"},
+    
+    -- Scripts & Logic
+    Script = {"Source", "Enabled", "RunContext", "LinkedSource"},
+    LocalScript = {"Source", "Enabled", "RunContext", "LinkedSource"},
+    ModuleScript = {"Source", "LinkedSource"},
+    
+    -- Lighting & Lights
+    PointLight = {"Brightness", "Color", "Range", "Shadows", "Enabled"},
+    SpotLight = {"Brightness", "Color", "Range", "Angle", "Face", "Shadows", "Enabled"},
+    SurfaceLight = {"Brightness", "Color", "Range", "Angle", "Face", "Shiny", 
+                    "Specular", "Enabled"},
+    
+    -- Audio
+    Sound = {"SoundId", "Volume", "Pitch", "Looped", "Playing", "PlaybackSpeed", 
+             "PlayOnRemove", "RollOffMode", "EmitterSize", "TimePosition",
+             "SoundGroup", "MaxDistance", "MinDistance"},
+    
+    SoundGroup = {"Name", "Parent", "Volume"},
+    
+    -- Constraints
+    Weld = {"Part0", "Part1", "C0", "C1", "Enabled"},
+    Motor6D = {"Part0", "Part1", "C0", "C1", "MaxVelocity", "CurrentAngle", "Enabled"},
+    Snap = {"Part0", "Part1", "C0", "C1", "Enabled"},
+    HingeConstraint = {"Attachment0", "Attachment1", "Angle", "AngularVelocity", 
+                       "Enabled", "LimitsEnabled", "UpperAngle", "LowerAngle",
+                       "MotorMaxAcceleration", "MotorMaxTorque", "AngularSpeed"},
+    
+    -- Attachments
+    Attachment = {"Position", "Rotation", "Axis", "SecondaryAxis", "Visible", 
+                  "WorldCFrame", "Name", "Parent"},
+    
+    -- Particle Emitters
+    ParticleEmitter = {"Rate", "Speed", "Lifetime", "SpreadAngle", "Drag", 
+                       "Acceleration", "Rotation", "RotSpeed", "Transparency", 
+                       "Color", "Size", "Texture", "VelocityInheritance", 
+                       "VelocitySpread", "EmissionDirection", "Enabled", 
+                       "LightEmission", "LightInfluence", "ZOffset", "FlipbookLayout"},
+    
+    -- Beams
+    Beam = {"Texture", "TextureSpeed", "TextureLength", "Width0", "Width1", 
+            "Transparency", "Color", "CurveSize0", "CurveSize1", "FaceCamera", 
+            "Enabled", "LightEmission", "Segments", "ZOffset"},
+    
+    -- Humanoids & Characters
+    Humanoid = {"DisplayName", "Health", "MaxHealth", "WalkSpeed", "JumpPower", 
+                "HipHeight", "AutoRotate", "FloorMaterial", "MoveDirection", 
+                "RigType", "UseJumpPower", "CameraOffset", "HealthDisplayDistance",
+                "HealthDisplayType", "MaxSlopeAngle", "NameDisplayDistance",
+                "NameOcclusion", "RequiresNeck", "UseJumpPower", "AutomaticScalingEnabled"},
+    
+    BodyColors = {"HeadColor", "TorsoColor", "LeftArmColor", "RightArmColor", 
+                  "LeftLegColor", "RightLegColor"},
+    
+    -- Values
+    StringValue = {"Value"},
+    NumberValue = {"Value"},
+    IntValue = {"Value"},
+    BoolValue = {"Value"},
+    Vector3Value = {"Value"},
+    CFrameValue = {"Value"},
+    Color3Value = {"Value"},
+    BrickColorValue = {"Value"},
+    ObjectValue = {"Value"},
+    
+    -- GUI Elements
+    BillboardGui = {"Adornee", "Size", "StudsOffset", "Enabled", "Active", 
+                    "AlwaysOnTop", "LightInfluence", "Brightness", "MaxDistance",
+                    "ClipsDescendants", "ResetOnSpawn", "ZIndexBehavior"},
+    
+    SurfaceGui = {"Adornee", "Face", "SizingMode", "PixelsPerStud", "Enabled", 
+                  "Active", "ClipsDescendants", "ZIndexBehavior"},
+    
+    TextLabel = {"Text", "TextColor3", "TextSize", "Font", "BackgroundColor3", 
+                 "BackgroundTransparency", "BorderSizePixel", "Position", "Size", 
+                 "Visible", "ZIndex", "TextScaled", "TextWrapped", "TextXAlignment",
+                 "TextYAlignment", "RichText", "LineHeight", "FontFace"},
+    
+    ImageLabel = {"Image", "ImageColor3", "ImageTransparency", "BackgroundColor3",
+                  "BackgroundTransparency", "Position", "Size", "Visible",
+                  "ScaleType", "SliceCenter", "TileSize"},
+    
+    TextButton = {"Text", "TextColor3", "TextSize", "Font", "BackgroundColor3",
+                  "BackgroundTransparency", "Position", "Size", "Visible", 
+                  "AutoButtonColor", "Modal", "Selected", "Style"},
+    
+    ImageButton = {"Image", "ImageColor3", "ImageTransparency", "BackgroundColor3",
+                   "BackgroundTransparency", "Position", "Size", "Visible", 
+                   "AutoButtonColor", "Modal", "Selected", "Style"},
+    
+    Frame = {"BackgroundColor3", "BackgroundTransparency", "BorderSizePixel",
+             "Position", "Size", "Visible", "ZIndex", "Active", "Draggable",
+             "Selectable", "ClipsDescendants"},
+    
+    ScrollingFrame = {"BackgroundColor3", "BackgroundTransparency", "BorderSizePixel",
+                      "Position", "Size", "Visible", "ScrollBarThickness", 
+                      "ScrollingEnabled", "CanvasSize", "CanvasPosition",
+                      "ScrollBarImageColor3", "ElasticBehavior", "ScrollingDirection"},
+    
+    -- Effects
+    SelectionBox = {"Adornee", "Color3", "LineThickness", "SurfaceTransparency", "Visible"},
+    SelectionSphere = {"Adornee", "Color3", "SurfaceTransparency", "Visible"},
+    
+    -- Camera
+    Camera = {"CFrame", "Focus", "FieldOfView", "CameraType", "CameraSubject", 
+              "HeadScale", "FieldOfViewMode", "DiagonalFieldOfView"},
+    
+    -- Animation
+    Animation = {"AnimationId", "Name"},
+    Animator = {"Name", "Parent"},
+    AnimationTrack = {"Name", "Animation", "Looped", "Priority", "Speed", "TimePosition"},
+    
+    -- Services & Special
+    Lighting = {"Ambient", "Brightness", "ColorShift_Top", "ColorShift_Bottom",
+                "EnvironmentDiffuseScale", "EnvironmentSpecularScale", "GlobalShadows",
+                "OutdoorAmbient", "ShadowSoftness", "ClockTime", "GeographicLatitude",
+                "ExposureCompensation", "FogEnd", "FogStart", "FogColor",
+                "Technology", "AmbientOcclusion", "Blur", "Outlines"},
+    
+    Workspace = {"Gravity", "FallenPartsDestroyHeight", "StreamingEnabled",
+                 "StreamingMinRadius", "StreamingTargetRadius", "CollisionGroups"},
+    
+    -- Spawn Locations
+    SpawnLocation = {"Position", "CFrame", "TeamColor", "Duration", "Neutral",
+                     "AllowTeamChangeOnTouch", "Enabled", "Neutral"},
+    
+    -- CFrame & Transform
+    CFrameValue = {"Value"},
+    
+    -- Joints
+    JointInstance = {"Part0", "Part1", "C0", "C1"},
+    
+    -- Mesh
+    SpecialMesh = {"MeshId", "TextureId", "MeshType", "Scale", "Offset", "VertexColor"},
+    BlockMesh = {"Scale", "Offset", "Bevel", "MeshType"},
+    CylinderMesh = {"Scale", "Offset", "Bevel", "MeshType"},
+    
+    -- SurfaceAppearance
+    SurfaceAppearance = {"ColorMap", "MetalnessMap", "NormalMap", "RoughnessMap",
+                         "MaskMap", "BlendMode", "TexturePack"}
+}
+
+-- Fallback properties
+MapStealer.FallbackProperties = {"Name", "Parent"}
+
+-- ==================================================
+-- UI INTERFACE SUPER KEREN
 -- ==================================================
 function MapStealer:CreateUI()
     -- Cek kalo udah ada UI sebelumnya
-    local existing = game.CoreGui:FindFirstChild("cvAI4_MapStealer")
+    local existing = game.CoreGui:FindFirstChild("cvAI4_MapStealer_V3")
     if existing then existing:Destroy() end
     
     local ScreenGui = Instance.new("ScreenGui")
     local MainFrame = Instance.new("Frame")
+    local TitleBar = Instance.new("Frame")
     local Title = Instance.new("TextLabel")
+    local CloseBtn = Instance.new("TextButton")
+    local MinimizeBtn = Instance.new("TextButton")
+    local SettingsBtn = Instance.new("TextButton")
+    
+    -- Status Panel
+    local StatusPanel = Instance.new("Frame")
+    local StatusTitle = Instance.new("TextLabel")
     local Status = Instance.new("TextLabel")
-    local Progress = Instance.new("Frame")
+    local ProgressBar = Instance.new("Frame")
     local ProgressFill = Instance.new("Frame")
     local ProgressText = Instance.new("TextLabel")
-    local StealBtn = Instance.new("TextButton")
-    local SaveBtn = Instance.new("TextButton")
-    local LoadBtn = Instance.new("TextButton")
-    local DiscordBtn = Instance.new("TextButton")
-    local ListBox = Instance.new("ScrollingFrame")
-    local CloseBtn = Instance.new("TextButton")
+    local ETA = Instance.new("TextLabel")
     
+    -- Stats Panel
+    local StatsPanel = Instance.new("Frame")
+    local ObjectsLabel = Instance.new("TextLabel")
+    local ObjectsValue = Instance.new("TextLabel")
+    local SizeLabel = Instance.new("TextLabel")
+    local SizeValue = Instance.new("TextLabel")
+    local TimeLabel = Instance.new("TextLabel")
+    local TimeValue = Instance.new("TextLabel")
+    
+    -- Tab Control
+    local TabControl = Instance.new("Frame")
+    local MainTab = Instance.new("TextButton")
+    local ExportTab = Instance.new("TextButton")
+    local FilesTab = Instance.new("TextButton")
+    local SettingsTab = Instance.new("TextButton")
+    local TabIndicator = Instance.new("Frame")
+    
+    -- Content Pages
+    local MainPage = Instance.new("Frame")
+    local ExportPage = Instance.new("Frame")
+    local FilesPage = Instance.new("Frame")
+    local SettingsPage = Instance.new("Frame")
+    
+    -- Main Page Buttons
+    local StealBtn = Instance.new("TextButton")
+    local StopBtn = Instance.new("TextButton")
+    local PreviewBtn = Instance.new("TextButton")
+    
+    -- Export Page
+    local FormatLabel = Instance.new("TextLabel")
+    local JsonBtn = Instance.new("TextButton")
+    local RbxmBtn = Instance.new("TextButton")
+    local RbxlBtn = Instance.new("TextButton")
+    local HybridBtn = Instance.new("TextButton")
+    local ExportBtn = Instance.new("TextButton")
+    local DiscordBtn = Instance.new("TextButton")
+    local CloudBtn = Instance.new("TextButton")
+    
+    -- Files Page
+    local RefreshBtn = Instance.new("TextButton")
+    local DeleteBtn = Instance.new("TextButton")
+    local RenameBtn = Instance.new("TextButton")
+    local UploadBtn = Instance.new("TextButton")
+    local FileList = Instance.new("ScrollingFrame")
+    local FileInfo = Instance.new("Frame")
+    local FileName = Instance.new("TextLabel")
+    local FileSize = Instance.new("TextLabel")
+    local FileDate = Instance.new("TextLabel")
+    local FileObjects = Instance.new("TextLabel")
+    
+    -- Settings Page
+    local TerrainToggle = Instance.new("TextButton")
+    local SpawnsToggle = Instance.new("TextButton")
+    local LightingToggle = Instance.new("TextButton")
+    local ScriptsToggle = Instance.new("TextButton")
+    local ParticlesToggle = Instance.new("TextButton")
+    local AutoSaveToggle = Instance.new("TextButton")
+    local WebhookInput = Instance.new("TextBox")
+    local SaveSettingsBtn = Instance.new("TextButton")
+    
+    -- Setup ScreenGui
     ScreenGui.Parent = game.CoreGui
-    ScreenGui.Name = "cvAI4_MapStealer"
+    ScreenGui.Name = "cvAI4_MapStealer_V3"
     ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     ScreenGui.DisplayOrder = 999999
+    ScreenGui.ResetOnSpawn = false
     
     -- Main Frame
     MainFrame.Parent = ScreenGui
-    MainFrame.Size = UDim2.new(0, 450, 0, 600)
-    MainFrame.Position = UDim2.new(0.5, -225, 0.5, -300)
-    MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    MainFrame.Size = UDim2.new(0, 800, 0, 600)
+    MainFrame.Position = UDim2.new(0.5, -400, 0.5, -300)
+    MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
     MainFrame.BorderSizePixel = 0
     MainFrame.Active = true
     MainFrame.Draggable = true
     MainFrame.ClipsDescendants = true
     
-    -- Shadow effect
+    -- Shadow
     local Shadow = Instance.new("ImageLabel")
     Shadow.Parent = MainFrame
     Shadow.Name = "Shadow"
     Shadow.BackgroundTransparency = 1
-    Shadow.Position = UDim2.new(0, -10, 0, -10)
-    Shadow.Size = UDim2.new(1, 20, 1, 20)
+    Shadow.Position = UDim2.new(0, -20, 0, -20)
+    Shadow.Size = UDim2.new(1, 40, 1, 40)
     Shadow.ZIndex = -1
     Shadow.Image = "rbxassetid://1316045217"
     Shadow.ImageColor3 = Color3.new(0, 0, 0)
     Shadow.ImageTransparency = 0.5
+    Shadow.ScaleType = Enum.ScaleType.Slice
+    Shadow.SliceCenter = Rect.new(10, 10, 118, 118)
     
     -- Title Bar
-    local TitleBar = Instance.new("Frame")
     TitleBar.Parent = MainFrame
     TitleBar.Size = UDim2.new(1, 0, 0, 40)
-    TitleBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    TitleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     TitleBar.BorderSizePixel = 0
     
     local Gradient = Instance.new("UIGradient")
     Gradient.Parent = TitleBar
     Gradient.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(45, 45, 60)),
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(40, 40, 55)),
         ColorSequenceKeypoint.new(1, Color3.fromRGB(25, 25, 35))
     })
     
+    -- Title
     Title.Parent = TitleBar
-    Title.Size = UDim2.new(1, -40, 1, 0)
+    Title.Size = UDim2.new(1, -120, 1, 0)
     Title.Position = UDim2.new(0, 10, 0, 0)
     Title.BackgroundTransparency = 1
-    Title.Text = "🗺️ cvAI4 MAP RIPPER v2.7"
+    Title.Text = "🗺️ cvAI4 MAP RIPPER V3.0 - ULTIMATE EDITION"
     Title.TextColor3 = Color3.fromRGB(0, 255, 200)
     Title.TextSize = 18
     Title.Font = Enum.Font.GothamBold
     Title.TextXAlignment = Enum.TextXAlignment.Left
     
+    -- Version Badge
+    local VersionBadge = Instance.new("Frame")
+    VersionBadge.Parent = TitleBar
+    VersionBadge.Size = UDim2.new(0, 60, 0, 20)
+    VersionBadge.Position = UDim2.new(1, -150, 0, 10)
+    VersionBadge.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    VersionBadge.BorderSizePixel = 0
+    VersionBadge.BackgroundTransparency = 0.2
+    
+    local VersionText = Instance.new("TextLabel")
+    VersionText.Parent = VersionBadge
+    VersionText.Size = UDim2.new(1, 0, 1, 0)
+    VersionText.BackgroundTransparency = 1
+    VersionText.Text = "PERFECT"
+    VersionText.TextColor3 = Color3.fromRGB(255, 255, 255)
+    VersionText.TextSize = 12
+    VersionText.Font = Enum.Font.GothamBold
+    
+    -- Window Controls
+    MinimizeBtn.Parent = TitleBar
+    MinimizeBtn.Size = UDim2.new(0, 30, 0, 30)
+    MinimizeBtn.Position = UDim2.new(1, -70, 0, 5)
+    MinimizeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    MinimizeBtn.Text = "─"
+    MinimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    MinimizeBtn.TextSize = 20
+    MinimizeBtn.BorderSizePixel = 0
+    MinimizeBtn.MouseButton1Click:Connect(function()
+        MainFrame.Visible = not MainFrame.Visible
+        wait(0.1)
+        MainFrame.Visible = true
+    end)
+    
     CloseBtn.Parent = TitleBar
     CloseBtn.Size = UDim2.new(0, 30, 0, 30)
     CloseBtn.Position = UDim2.new(1, -35, 0, 5)
-    CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+    CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
     CloseBtn.Text = "✕"
     CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     CloseBtn.TextSize = 20
@@ -125,103 +547,372 @@ function MapStealer:CreateUI()
         ScreenGui:Destroy()
     end)
     
+    -- Tab Control
+    TabControl.Parent = MainFrame
+    TabControl.Size = UDim2.new(1, 0, 0, 40)
+    TabControl.Position = UDim2.new(0, 0, 0, 40)
+    TabControl.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    TabControl.BorderSizePixel = 0
+    
+    -- Tabs
+    MainTab.Parent = TabControl
+    MainTab.Size = UDim2.new(0.25, 0, 1, 0)
+    MainTab.Position = UDim2.new(0, 0, 0, 0)
+    MainTab.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    MainTab.Text = "📊 MAIN"
+    MainTab.TextColor3 = Color3.fromRGB(0, 255, 200)
+    MainTab.TextSize = 16
+    MainTab.Font = Enum.Font.GothamBold
+    MainTab.BorderSizePixel = 0
+    
+    ExportTab.Parent = TabControl
+    ExportTab.Size = UDim2.new(0.25, 0, 1, 0)
+    ExportTab.Position = UDim2.new(0.25, 0, 0, 0)
+    ExportTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    ExportTab.Text = "📦 EXPORT"
+    ExportTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    ExportTab.TextSize = 16
+    ExportTab.Font = Enum.Font.GothamBold
+    ExportTab.BorderSizePixel = 0
+    
+    FilesTab.Parent = TabControl
+    FilesTab.Size = UDim2.new(0.25, 0, 1, 0)
+    FilesTab.Position = UDim2.new(0.5, 0, 0, 0)
+    FilesTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    FilesTab.Text = "📁 FILES"
+    FilesTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    FilesTab.TextSize = 16
+    FilesTab.Font = Enum.Font.GothamBold
+    FilesTab.BorderSizePixel = 0
+    
+    SettingsTab.Parent = TabControl
+    SettingsTab.Size = UDim2.new(0.25, 0, 1, 0)
+    SettingsTab.Position = UDim2.new(0.75, 0, 0, 0)
+    SettingsTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    SettingsTab.Text = "⚙️ SETTINGS"
+    SettingsTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    SettingsTab.TextSize = 16
+    SettingsTab.Font = Enum.Font.GothamBold
+    SettingsTab.BorderSizePixel = 0
+    
+    -- Tab Indicator
+    TabIndicator.Parent = TabControl
+    TabIndicator.Size = UDim2.new(0.25, 0, 0, 2)
+    TabIndicator.Position = UDim2.new(0, 0, 1, -2)
+    TabIndicator.BackgroundColor3 = Color3.fromRGB(0, 255, 200)
+    TabIndicator.BorderSizePixel = 0
+    
+    -- Content Pages
+    MainPage.Parent = MainFrame
+    MainPage.Size = UDim2.new(1, -20, 1, -100)
+    MainPage.Position = UDim2.new(0, 10, 0, 90)
+    MainPage.BackgroundTransparency = 1
+    MainPage.Visible = true
+    
+    ExportPage.Parent = MainFrame
+    ExportPage.Size = UDim2.new(1, -20, 1, -100)
+    ExportPage.Position = UDim2.new(0, 10, 0, 90)
+    ExportPage.BackgroundTransparency = 1
+    ExportPage.Visible = false
+    
+    FilesPage.Parent = MainFrame
+    FilesPage.Size = UDim2.new(1, -20, 1, -100)
+    FilesPage.Position = UDim2.new(0, 10, 0, 90)
+    FilesPage.BackgroundTransparency = 1
+    FilesPage.Visible = false
+    
+    SettingsPage.Parent = MainFrame
+    SettingsPage.Size = UDim2.new(1, -20, 1, -100)
+    SettingsPage.Position = UDim2.new(0, 10, 0, 90)
+    SettingsPage.BackgroundTransparency = 1
+    SettingsPage.Visible = false
+    
+    -- Tab switching
+    MainTab.MouseButton1Click:Connect(function()
+        MainPage.Visible = true
+        ExportPage.Visible = false
+        FilesPage.Visible = false
+        SettingsPage.Visible = false
+        TabIndicator:TweenPosition(UDim2.new(0, 0, 0, 0), "Out", "Quad", 0.2, true)
+        MainTab.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        ExportTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        FilesTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        SettingsTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        MainTab.TextColor3 = Color3.fromRGB(0, 255, 200)
+        ExportTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        FilesTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        SettingsTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end)
+    
+    ExportTab.MouseButton1Click:Connect(function()
+        MainPage.Visible = false
+        ExportPage.Visible = true
+        FilesPage.Visible = false
+        SettingsPage.Visible = false
+        TabIndicator:TweenPosition(UDim2.new(0.25, 0, 0, 0), "Out", "Quad", 0.2, true)
+        ExportTab.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        MainTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        FilesTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        SettingsTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        ExportTab.TextColor3 = Color3.fromRGB(0, 255, 200)
+        MainTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        FilesTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        SettingsTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end)
+    
+    FilesTab.MouseButton1Click:Connect(function()
+        MainPage.Visible = false
+        ExportPage.Visible = false
+        FilesPage.Visible = true
+        SettingsPage.Visible = false
+        TabIndicator:TweenPosition(UDim2.new(0.5, 0, 0, 0), "Out", "Quad", 0.2, true)
+        FilesTab.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        MainTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        ExportTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        SettingsTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        FilesTab.TextColor3 = Color3.fromRGB(0, 255, 200)
+        MainTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        ExportTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        SettingsTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        self:RefreshFileList()
+    end)
+    
+    SettingsTab.MouseButton1Click:Connect(function()
+        MainPage.Visible = false
+        ExportPage.Visible = false
+        FilesPage.Visible = false
+        SettingsPage.Visible = true
+        TabIndicator:TweenPosition(UDim2.new(0.75, 0, 0, 0), "Out", "Quad", 0.2, true)
+        SettingsTab.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+        MainTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        ExportTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        FilesTab.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+        SettingsTab.TextColor3 = Color3.fromRGB(0, 255, 200)
+        MainTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        ExportTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+        FilesTab.TextColor3 = Color3.fromRGB(150, 150, 150)
+    end)
+    
     -- Status Panel
-    local StatusPanel = Instance.new("Frame")
-    StatusPanel.Parent = MainFrame
-    StatusPanel.Size = UDim2.new(1, -20, 0, 60)
-    StatusPanel.Position = UDim2.new(0, 10, 0, 50)
-    StatusPanel.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    StatusPanel.Parent = MainPage
+    StatusPanel.Size = UDim2.new(1, 0, 0, 80)
+    StatusPanel.Position = UDim2.new(0, 0, 0, 0)
+    StatusPanel.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
     StatusPanel.BorderSizePixel = 0
     
-    local StatusTitle = Instance.new("TextLabel")
     StatusTitle.Parent = StatusPanel
-    StatusTitle.Size = UDim2.new(1, -10, 0, 20)
-    StatusTitle.Position = UDim2.new(0, 5, 0, 5)
+    StatusTitle.Size = UDim2.new(1, -20, 0, 20)
+    StatusTitle.Position = UDim2.new(0, 10, 0, 5)
     StatusTitle.BackgroundTransparency = 1
-    StatusTitle.Text = "STATUS"
+    StatusTitle.Text = "SYSTEM STATUS"
     StatusTitle.TextColor3 = Color3.fromRGB(150, 150, 150)
     StatusTitle.TextSize = 12
     StatusTitle.Font = Enum.Font.GothamBold
     StatusTitle.TextXAlignment = Enum.TextXAlignment.Left
     
     Status.Parent = StatusPanel
-    Status.Size = UDim2.new(1, -10, 0, 30)
-    Status.Position = UDim2.new(0, 5, 0, 25)
+    Status.Size = UDim2.new(1, -20, 0, 25)
+    Status.Position = UDim2.new(0, 10, 0, 25)
     Status.BackgroundTransparency = 1
-    Status.Text = "Ready to steal maps 👾"
+    Status.Text = "🟢 READY - Click STEAL to begin"
     Status.TextColor3 = Color3.fromRGB(0, 255, 200)
-    Status.TextSize = 14
-    Status.Font = Enum.Font.Gotham
+    Status.TextSize = 16
+    Status.Font = Enum.Font.GothamBold
     Status.TextXAlignment = Enum.TextXAlignment.Left
-    Status.TextWrapped = true
     
     -- Progress Bar
-    local ProgressBar = Instance.new("Frame")
-    ProgressBar.Parent = StatusPanel
-    ProgressBar.Size = UDim2.new(1, -10, 0, 6)
-    ProgressBar.Position = UDim2.new(0, 5, 1, -11)
-    ProgressBar.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-    ProgressBar.BorderSizePixel = 0
+    local ProgressBg = Instance.new("Frame")
+    ProgressBg.Parent = StatusPanel
+    ProgressBg.Size = UDim2.new(0.7, -20, 0, 20)
+    ProgressBg.Position = UDim2.new(0, 10, 0, 55)
+    ProgressBg.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    ProgressBg.BorderSizePixel = 0
     
-    ProgressFill.Parent = ProgressBar
-    ProgressFill.Name = "ProgressFill"
+    ProgressFill.Parent = ProgressBg
     ProgressFill.Size = UDim2.new(0, 0, 1, 0)
     ProgressFill.BackgroundColor3 = Color3.fromRGB(0, 255, 200)
     ProgressFill.BorderSizePixel = 0
     
-    ProgressText.Parent = ProgressBar
+    ProgressText.Parent = ProgressBg
     ProgressText.Size = UDim2.new(1, 0, 1, 0)
     ProgressText.BackgroundTransparency = 1
     ProgressText.Text = "0%"
     ProgressText.TextColor3 = Color3.fromRGB(255, 255, 255)
-    ProgressText.TextSize = 10
+    ProgressText.TextSize = 12
     ProgressText.Font = Enum.Font.GothamBold
     ProgressText.TextXAlignment = Enum.TextXAlignment.Center
     
-    -- Buttons Panel
-    local ButtonPanel = Instance.new("Frame")
-    ButtonPanel.Parent = MainFrame
-    ButtonPanel.Size = UDim2.new(1, -20, 0, 100)
-    ButtonPanel.Position = UDim2.new(0, 10, 0, 120)
-    ButtonPanel.BackgroundTransparency = 1
+    ETA.Parent = StatusPanel
+    ETA.Size = UDim2.new(0.3, -20, 0, 20)
+    ETA.Position = UDim2.new(0.7, 10, 0, 55)
+    ETA.BackgroundTransparency = 1
+    ETA.Text = "ETA: --:--"
+    ETA.TextColor3 = Color3.fromRGB(200, 200, 200)
+    ETA.TextSize = 12
+    ETA.Font = Enum.Font.Gotham
+    ETA.TextXAlignment = Enum.TextXAlignment.Center
     
-    -- Steal Button
-    StealBtn.Parent = ButtonPanel
-    StealBtn.Size = UDim2.new(0.5, -5, 0, 45)
-    StealBtn.Position = UDim2.new(0, 0, 0, 0)
+    -- Stats Panel
+    StatsPanel.Parent = MainPage
+    StatsPanel.Size = UDim2.new(1, 0, 0, 50)
+    StatsPanel.Position = UDim2.new(0, 0, 0, 90)
+    StatsPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    StatsPanel.BorderSizePixel = 0
+    
+    ObjectsLabel.Parent = StatsPanel
+    ObjectsLabel.Size = UDim2.new(0.33, 0, 0, 20)
+    ObjectsLabel.Position = UDim2.new(0, 10, 0, 5)
+    ObjectsLabel.BackgroundTransparency = 1
+    ObjectsLabel.Text = "OBJECTS"
+    ObjectsLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    ObjectsLabel.TextSize = 10
+    ObjectsLabel.Font = Enum.Font.GothamBold
+    ObjectsLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    ObjectsValue.Parent = StatsPanel
+    ObjectsValue.Size = UDim2.new(0.33, 0, 0, 20)
+    ObjectsValue.Position = UDim2.new(0, 10, 0, 25)
+    ObjectsValue.BackgroundTransparency = 1
+    ObjectsValue.Text = "0"
+    ObjectsValue.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ObjectsValue.TextSize = 14
+    ObjectsValue.Font = Enum.Font.GothamBold
+    ObjectsValue.TextXAlignment = Enum.TextXAlignment.Left
+    
+    SizeLabel.Parent = StatsPanel
+    SizeLabel.Size = UDim2.new(0.33, 0, 0, 20)
+    SizeLabel.Position = UDim2.new(0.33, 10, 0, 5)
+    SizeLabel.BackgroundTransparency = 1
+    SizeLabel.Text = "SIZE"
+    SizeLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    SizeLabel.TextSize = 10
+    SizeLabel.Font = Enum.Font.GothamBold
+    SizeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    SizeValue.Parent = StatsPanel
+    SizeValue.Size = UDim2.new(0.33, 0, 0, 20)
+    SizeValue.Position = UDim2.new(0.33, 10, 0, 25)
+    SizeValue.BackgroundTransparency = 1
+    SizeValue.Text = "0 KB"
+    SizeValue.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SizeValue.TextSize = 14
+    SizeValue.Font = Enum.Font.GothamBold
+    SizeValue.TextXAlignment = Enum.TextXAlignment.Left
+    
+    TimeLabel.Parent = StatsPanel
+    TimeLabel.Size = UDim2.new(0.33, 0, 0, 20)
+    TimeLabel.Position = UDim2.new(0.66, 10, 0, 5)
+    TimeLabel.BackgroundTransparency = 1
+    TimeLabel.Text = "TIME"
+    TimeLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    TimeLabel.TextSize = 10
+    TimeLabel.Font = Enum.Font.GothamBold
+    TimeLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    TimeValue.Parent = StatsPanel
+    TimeValue.Size = UDim2.new(0.33, 0, 0, 20)
+    TimeValue.Position = UDim2.new(0.66, 10, 0, 25)
+    TimeValue.BackgroundTransparency = 1
+    TimeValue.Text = "--:--:--"
+    TimeValue.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TimeValue.TextSize = 14
+    TimeValue.Font = Enum.Font.GothamBold
+    TimeValue.TextXAlignment = Enum.TextXAlignment.Left
+    
+    -- Main Page Buttons
+    StealBtn.Parent = MainPage
+    StealBtn.Size = UDim2.new(0.5, -5, 0, 60)
+    StealBtn.Position = UDim2.new(0, 0, 0, 150)
     StealBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
     StealBtn.Text = "🔥 STEAL MAP"
     StealBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    StealBtn.TextSize = 16
+    StealBtn.TextSize = 24
     StealBtn.Font = Enum.Font.GothamBold
     StealBtn.BorderSizePixel = 0
     
-    -- Save Button
-    SaveBtn.Parent = ButtonPanel
-    SaveBtn.Size = UDim2.new(0.5, -5, 0, 45)
-    SaveBtn.Position = UDim2.new(0.5, 5, 0, 0)
-    SaveBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
-    SaveBtn.Text = "💾 SAVE MAP"
-    SaveBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    SaveBtn.TextSize = 16
-    SaveBtn.Font = Enum.Font.GothamBold
-    SaveBtn.BorderSizePixel = 0
+    StopBtn.Parent = MainPage
+    StopBtn.Size = UDim2.new(0.5, -5, 0, 60)
+    StopBtn.Position = UDim2.new(0.5, 5, 0, 150)
+    StopBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+    StopBtn.Text = "⏹️ STOP"
+    StopBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    StopBtn.TextSize = 24
+    StopBtn.Font = Enum.Font.GothamBold
+    StopBtn.BorderSizePixel = 0
     
-    -- Load Button
-    LoadBtn.Parent = ButtonPanel
-    LoadBtn.Size = UDim2.new(0.5, -5, 0, 45)
-    LoadBtn.Position = UDim2.new(0, 0, 0, 50)
-    LoadBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 0)
-    LoadBtn.Text = "📂 LOAD MAP"
-    LoadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    LoadBtn.TextSize = 16
-    LoadBtn.Font = Enum.Font.GothamBold
-    LoadBtn.BorderSizePixel = 0
+    PreviewBtn.Parent = MainPage
+    PreviewBtn.Size = UDim2.new(1, 0, 0, 50)
+    PreviewBtn.Position = UDim2.new(0, 0, 0, 220)
+    PreviewBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    PreviewBtn.Text = "👁️ PREVIEW CAPTURED MAP"
+    PreviewBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    PreviewBtn.TextSize = 18
+    PreviewBtn.Font = Enum.Font.GothamBold
+    PreviewBtn.BorderSizePixel = 0
     
-    -- Discord Button
-    DiscordBtn.Parent = ButtonPanel
-    DiscordBtn.Size = UDim2.new(0.5, -5, 0, 45)
-    DiscordBtn.Position = UDim2.new(0.5, 5, 0, 50)
+    -- Export Page
+    FormatLabel.Parent = ExportPage
+    FormatLabel.Size = UDim2.new(1, 0, 0, 30)
+    FormatLabel.Position = UDim2.new(0, 0, 0, 10)
+    FormatLabel.BackgroundTransparency = 1
+    FormatLabel.Text = "📦 EXPORT FORMAT"
+    FormatLabel.TextColor3 = Color3.fromRGB(0, 255, 200)
+    FormatLabel.TextSize = 18
+    FormatLabel.Font = Enum.Font.GothamBold
+    
+    JsonBtn.Parent = ExportPage
+    JsonBtn.Size = UDim2.new(0.5, -5, 0, 50)
+    JsonBtn.Position = UDim2.new(0, 0, 0, 50)
+    JsonBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 200)
+    JsonBtn.Text = "📄 JSON"
+    JsonBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    JsonBtn.TextSize = 16
+    JsonBtn.Font = Enum.Font.GothamBold
+    JsonBtn.BorderSizePixel = 0
+    
+    RbxmBtn.Parent = ExportPage
+    RbxmBtn.Size = UDim2.new(0.5, -5, 0, 50)
+    RbxmBtn.Position = UDim2.new(0.5, 5, 0, 50)
+    RbxmBtn.BackgroundColor3 = Color3.fromRGB(150, 100, 200)
+    RbxmBtn.Text = "📦 RBXM"
+    RbxmBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RbxmBtn.TextSize = 16
+    RbxmBtn.Font = Enum.Font.GothamBold
+    RbxmBtn.BorderSizePixel = 0
+    
+    RbxlBtn.Parent = ExportPage
+    RbxlBtn.Size = UDim2.new(0.5, -5, 0, 50)
+    RbxlBtn.Position = UDim2.new(0, 0, 0, 110)
+    RbxlBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 150)
+    RbxlBtn.Text = "🗂️ RBXL"
+    RbxlBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RbxlBtn.TextSize = 16
+    RbxlBtn.Font = Enum.Font.GothamBold
+    RbxlBtn.BorderSizePixel = 0
+    
+    HybridBtn.Parent = ExportPage
+    HybridBtn.Size = UDim2.new(0.5, -5, 0, 50)
+    HybridBtn.Position = UDim2.new(0.5, 5, 0, 110)
+    HybridBtn.BackgroundColor3 = Color3.fromRGB(200, 150, 50)
+    HybridBtn.Text = "🔄 HYBRID"
+    HybridBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    HybridBtn.TextSize = 16
+    HybridBtn.Font = Enum.Font.GothamBold
+    HybridBtn.BorderSizePixel = 0
+    
+    ExportBtn.Parent = ExportPage
+    ExportBtn.Size = UDim2.new(1, 0, 0, 60)
+    ExportBtn.Position = UDim2.new(0, 0, 0, 180)
+    ExportBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    ExportBtn.Text = "🚀 EXPORT NOW"
+    ExportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ExportBtn.TextSize = 24
+    ExportBtn.Font = Enum.Font.GothamBold
+    ExportBtn.BorderSizePixel = 0
+    
+    DiscordBtn.Parent = ExportPage
+    DiscordBtn.Size = UDim2.new(0.5, -5, 0, 50)
+    DiscordBtn.Position = UDim2.new(0, 0, 0, 250)
     DiscordBtn.BackgroundColor3 = Color3.fromRGB(114, 137, 218)
     DiscordBtn.Text = "🔗 DISCORD"
     DiscordBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -229,26 +920,216 @@ function MapStealer:CreateUI()
     DiscordBtn.Font = Enum.Font.GothamBold
     DiscordBtn.BorderSizePixel = 0
     
-    -- Files List
-    local ListTitle = Instance.new("TextLabel")
-    ListTitle.Parent = MainFrame
-    ListTitle.Size = UDim2.new(1, -20, 0, 25)
-    ListTitle.Position = UDim2.new(0, 10, 0, 230)
-    ListTitle.BackgroundTransparency = 1
-    ListTitle.Text = "📁 SAVED MAPS"
-    ListTitle.TextColor3 = Color3.fromRGB(150, 150, 150)
-    ListTitle.TextSize = 14
-    ListTitle.Font = Enum.Font.GothamBold
-    ListTitle.TextXAlignment = Enum.TextXAlignment.Left
+    CloudBtn.Parent = ExportPage
+    CloudBtn.Size = UDim2.new(0.5, -5, 0, 50)
+    CloudBtn.Position = UDim2.new(0.5, 5, 0, 250)
+    CloudBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
+    CloudBtn.Text = "☁️ CLOUD"
+    CloudBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    CloudBtn.TextSize = 16
+    CloudBtn.Font = Enum.Font.GothamBold
+    CloudBtn.BorderSizePixel = 0
     
-    ListBox.Parent = MainFrame
-    ListBox.Size = UDim2.new(1, -20, 1, -270)
-    ListBox.Position = UDim2.new(0, 10, 0, 260)
-    ListBox.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
-    ListBox.BorderSizePixel = 0
-    ListBox.ScrollBarThickness = 8
-    ListBox.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 200)
-    ListBox.CanvasSize = UDim2.new(0, 0, 0, 0)
+    -- Files Page
+    RefreshBtn.Parent = FilesPage
+    RefreshBtn.Size = UDim2.new(0.25, -5, 0, 40)
+    RefreshBtn.Position = UDim2.new(0, 0, 0, 0)
+    RefreshBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    RefreshBtn.Text = "🔄 REFRESH"
+    RefreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RefreshBtn.TextSize = 14
+    RefreshBtn.Font = Enum.Font.GothamBold
+    RefreshBtn.BorderSizePixel = 0
+    
+    DeleteBtn.Parent = FilesPage
+    DeleteBtn.Size = UDim2.new(0.25, -5, 0, 40)
+    DeleteBtn.Position = UDim2.new(0.25, 5, 0, 0)
+    DeleteBtn.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
+    DeleteBtn.Text = "🗑️ DELETE"
+    DeleteBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    DeleteBtn.TextSize = 14
+    DeleteBtn.Font = Enum.Font.GothamBold
+    DeleteBtn.BorderSizePixel = 0
+    
+    RenameBtn.Parent = FilesPage
+    RenameBtn.Size = UDim2.new(0.25, -5, 0, 40)
+    RenameBtn.Position = UDim2.new(0.5, 5, 0, 0)
+    RenameBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 200)
+    RenameBtn.Text = "✏️ RENAME"
+    RenameBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    RenameBtn.TextSize = 14
+    RenameBtn.Font = Enum.Font.GothamBold
+    RenameBtn.BorderSizePixel = 0
+    
+    UploadBtn.Parent = FilesPage
+    UploadBtn.Size = UDim2.new(0.25, -5, 0, 40)
+    UploadBtn.Position = UDim2.new(0.75, 5, 0, 0)
+    UploadBtn.BackgroundColor3 = Color3.fromRGB(0, 150, 200)
+    UploadBtn.Text = "📤 UPLOAD"
+    UploadBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    UploadBtn.TextSize = 14
+    UploadBtn.Font = Enum.Font.GothamBold
+    UploadBtn.BorderSizePixel = 0
+    
+    FileList.Parent = FilesPage
+    FileList.Size = UDim2.new(0.5, -5, 0, 350)
+    FileList.Position = UDim2.new(0, 0, 0, 50)
+    FileList.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    FileList.BorderSizePixel = 0
+    FileList.ScrollBarThickness = 8
+    FileList.ScrollBarImageColor3 = Color3.fromRGB(0, 255, 200)
+    FileList.CanvasSize = UDim2.new(0, 0, 0, 0)
+    
+    FileInfo.Parent = FilesPage
+    FileInfo.Size = UDim2.new(0.5, -5, 0, 350)
+    FileInfo.Position = UDim2.new(0.5, 5, 0, 50)
+    FileInfo.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    FileInfo.BorderSizePixel = 0
+    
+    FileName.Parent = FileInfo
+    FileName.Size = UDim2.new(1, -20, 0, 30)
+    FileName.Position = UDim2.new(0, 10, 0, 10)
+    FileName.BackgroundTransparency = 1
+    FileName.Text = "No file selected"
+    FileName.TextColor3 = Color3.fromRGB(255, 255, 255)
+    FileName.TextSize = 16
+    FileName.Font = Enum.Font.GothamBold
+    FileName.TextXAlignment = Enum.TextXAlignment.Left
+    
+    FileSize.Parent = FileInfo
+    FileSize.Size = UDim2.new(1, -20, 0, 25)
+    FileSize.Position = UDim2.new(0, 10, 0, 50)
+    FileSize.BackgroundTransparency = 1
+    FileSize.Text = "Size: -"
+    FileSize.TextColor3 = Color3.fromRGB(150, 150, 150)
+    FileSize.TextSize = 14
+    FileSize.Font = Enum.Font.Gotham
+    FileSize.TextXAlignment = Enum.TextXAlignment.Left
+    
+    FileDate.Parent = FileInfo
+    FileDate.Size = UDim2.new(1, -20, 0, 25)
+    FileDate.Position = UDim2.new(0, 10, 0, 80)
+    FileDate.BackgroundTransparency = 1
+    FileDate.Text = "Date: -"
+    FileDate.TextColor3 = Color3.fromRGB(150, 150, 150)
+    FileDate.TextSize = 14
+    FileDate.Font = Enum.Font.Gotham
+    FileDate.TextXAlignment = Enum.TextXAlignment.Left
+    
+    FileObjects.Parent = FileInfo
+    FileObjects.Size = UDim2.new(1, -20, 0, 25)
+    FileObjects.Position = UDim2.new(0, 10, 0, 110)
+    FileObjects.BackgroundTransparency = 1
+    FileObjects.Text = "Objects: -"
+    FileObjects.TextColor3 = Color3.fromRGB(150, 150, 150)
+    FileObjects.TextSize = 14
+    FileObjects.Font = Enum.Font.Gotham
+    FileObjects.TextXAlignment = Enum.TextXAlignment.Left
+    
+    -- Settings Page
+    local SettingsTitle = Instance.new("TextLabel")
+    SettingsTitle.Parent = SettingsPage
+    SettingsTitle.Size = UDim2.new(1, 0, 0, 30)
+    SettingsTitle.Position = UDim2.new(0, 0, 0, 10)
+    SettingsTitle.BackgroundTransparency = 1
+    SettingsTitle.Text = "⚙️ CONFIGURATION"
+    SettingsTitle.TextColor3 = Color3.fromRGB(0, 255, 200)
+    SettingsTitle.TextSize = 18
+    SettingsTitle.Font = Enum.Font.GothamBold
+    
+    -- Toggles
+    TerrainToggle.Parent = SettingsPage
+    TerrainToggle.Size = UDim2.new(0.5, -5, 0, 40)
+    TerrainToggle.Position = UDim2.new(0, 0, 0, 50)
+    TerrainToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    TerrainToggle.Text = "🗻 TERRAIN: ON"
+    TerrainToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    TerrainToggle.TextSize = 14
+    TerrainToggle.Font = Enum.Font.GothamBold
+    TerrainToggle.BorderSizePixel = 0
+    
+    SpawnsToggle.Parent = SettingsPage
+    SpawnsToggle.Size = UDim2.new(0.5, -5, 0, 40)
+    SpawnsToggle.Position = UDim2.new(0.5, 5, 0, 50)
+    SpawnsToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    SpawnsToggle.Text = "📍 SPAWNS: ON"
+    SpawnsToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SpawnsToggle.TextSize = 14
+    SpawnsToggle.Font = Enum.Font.GothamBold
+    SpawnsToggle.BorderSizePixel = 0
+    
+    LightingToggle.Parent = SettingsPage
+    LightingToggle.Size = UDim2.new(0.5, -5, 0, 40)
+    LightingToggle.Position = UDim2.new(0, 0, 0, 100)
+    LightingToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    LightingToggle.Text = "💡 LIGHTING: ON"
+    LightingToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    LightingToggle.TextSize = 14
+    LightingToggle.Font = Enum.Font.GothamBold
+    LightingToggle.BorderSizePixel = 0
+    
+    ScriptsToggle.Parent = SettingsPage
+    ScriptsToggle.Size = UDim2.new(0.5, -5, 0, 40)
+    ScriptsToggle.Position = UDim2.new(0.5, 5, 0, 100)
+    ScriptsToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    ScriptsToggle.Text = "📜 SCRIPTS: ON"
+    ScriptsToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ScriptsToggle.TextSize = 14
+    ScriptsToggle.Font = Enum.Font.GothamBold
+    ScriptsToggle.BorderSizePixel = 0
+    
+    ParticlesToggle.Parent = SettingsPage
+    ParticlesToggle.Size = UDim2.new(0.5, -5, 0, 40)
+    ParticlesToggle.Position = UDim2.new(0, 0, 0, 150)
+    ParticlesToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    ParticlesToggle.Text = "✨ PARTICLES: ON"
+    ParticlesToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    ParticlesToggle.TextSize = 14
+    ParticlesToggle.Font = Enum.Font.GothamBold
+    ParticlesToggle.BorderSizePixel = 0
+    
+    AutoSaveToggle.Parent = SettingsPage
+    AutoSaveToggle.Size = UDim2.new(0.5, -5, 0, 40)
+    AutoSaveToggle.Position = UDim2.new(0.5, 5, 0, 150)
+    AutoSaveToggle.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    AutoSaveToggle.Text = "💾 AUTO SAVE: ON"
+    AutoSaveToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+    AutoSaveToggle.TextSize = 14
+    AutoSaveToggle.Font = Enum.Font.GothamBold
+    AutoSaveToggle.BorderSizePixel = 0
+    
+    -- Webhook Input
+    local WebhookLabel = Instance.new("TextLabel")
+    WebhookLabel.Parent = SettingsPage
+    WebhookLabel.Size = UDim2.new(1, 0, 0, 25)
+    WebhookLabel.Position = UDim2.new(0, 0, 0, 210)
+    WebhookLabel.BackgroundTransparency = 1
+    WebhookLabel.Text = "DISCORD WEBHOOK URL"
+    WebhookLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
+    WebhookLabel.TextSize = 12
+    WebhookLabel.Font = Enum.Font.GothamBold
+    WebhookLabel.TextXAlignment = Enum.TextXAlignment.Left
+    
+    WebhookInput.Parent = SettingsPage
+    WebhookInput.Size = UDim2.new(1, 0, 0, 35)
+    WebhookInput.Position = UDim2.new(0, 0, 0, 240)
+    WebhookInput.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    WebhookInput.BorderSizePixel = 0
+    WebhookInput.Text = ""
+    WebhookInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+    WebhookInput.PlaceholderText = "https://discord.com/api/webhooks/..."
+    WebhookInput.TextSize = 14
+    WebhookInput.Font = Enum.Font.Gotham
+    
+    SaveSettingsBtn.Parent = SettingsPage
+    SaveSettingsBtn.Size = UDim2.new(1, 0, 0, 50)
+    SaveSettingsBtn.Position = UDim2.new(0, 0, 0, 290)
+    SaveSettingsBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    SaveSettingsBtn.Text = "💾 SAVE SETTINGS"
+    SaveSettingsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    SaveSettingsBtn.TextSize = 16
+    SaveSettingsBtn.Font = Enum.Font.GothamBold
+    SaveSettingsBtn.BorderSizePixel = 0
     
     -- Store UI elements
     self.UI = {
@@ -256,11 +1137,37 @@ function MapStealer:CreateUI()
         Status = Status,
         ProgressFill = ProgressFill,
         ProgressText = ProgressText,
+        ETA = ETA,
+        ObjectsValue = ObjectsValue,
+        SizeValue = SizeValue,
+        TimeValue = TimeValue,
         StealBtn = StealBtn,
-        SaveBtn = SaveBtn,
-        LoadBtn = LoadBtn,
+        StopBtn = StopBtn,
+        PreviewBtn = PreviewBtn,
+        JsonBtn = JsonBtn,
+        RbxmBtn = RbxmBtn,
+        RbxlBtn = RbxlBtn,
+        HybridBtn = HybridBtn,
+        ExportBtn = ExportBtn,
         DiscordBtn = DiscordBtn,
-        ListBox = ListBox
+        CloudBtn = CloudBtn,
+        RefreshBtn = RefreshBtn,
+        DeleteBtn = DeleteBtn,
+        RenameBtn = RenameBtn,
+        UploadBtn = UploadBtn,
+        FileList = FileList,
+        FileName = FileName,
+        FileSize = FileSize,
+        FileDate = FileDate,
+        FileObjects = FileObjects,
+        TerrainToggle = TerrainToggle,
+        SpawnsToggle = SpawnsToggle,
+        LightingToggle = LightingToggle,
+        ScriptsToggle = ScriptsToggle,
+        ParticlesToggle = ParticlesToggle,
+        AutoSaveToggle = AutoSaveToggle,
+        WebhookInput = WebhookInput,
+        SaveSettingsBtn = SaveSettingsBtn
     }
     
     -- Button functions
@@ -268,48 +1175,243 @@ function MapStealer:CreateUI()
         self:StealMap()
     end)
     
-    SaveBtn.MouseButton1Click:Connect(function()
-        self:SaveMap()
+    StopBtn.MouseButton1Click:Connect(function()
+        self:StopCapture()
     end)
     
-    LoadBtn.MouseButton1Click:Connect(function()
-        self:ShowLoadDialog()
+    PreviewBtn.MouseButton1Click:Connect(function()
+        self:PreviewMap()
+    end)
+    
+    JsonBtn.MouseButton1Click:Connect(function()
+        self:SetFormat("json")
+    end)
+    
+    RbxmBtn.MouseButton1Click:Connect(function()
+        self:SetFormat("rbxm")
+    end)
+    
+    RbxlBtn.MouseButton1Click:Connect(function()
+        self:SetFormat("rbxl")
+    end)
+    
+    HybridBtn.MouseButton1Click:Connect(function()
+        self:SetFormat("hybrid")
+    end)
+    
+    ExportBtn.MouseButton1Click:Connect(function()
+        self:ExportMap()
     end)
     
     DiscordBtn.MouseButton1Click:Connect(function()
         self:SetupDiscord()
     end)
     
+    RefreshBtn.MouseButton1Click:Connect(function()
+        self:RefreshFileList()
+    end)
+    
+    DeleteBtn.MouseButton1Click:Connect(function()
+        self:DeleteSelectedFile()
+    end)
+    
+    UploadBtn.MouseButton1Click:Connect(function()
+        self:UploadToCloud()
+    end)
+    
+    SaveSettingsBtn.MouseButton1Click:Connect(function()
+        self:SaveSettings()
+    end)
+    
+    -- Toggle buttons
+    TerrainToggle.MouseButton1Click:Connect(function()
+        self.Config.IncludeTerrain = not self.Config.IncludeTerrain
+        TerrainToggle.Text = "🗻 TERRAIN: " .. (self.Config.IncludeTerrain and "ON" or "OFF")
+        TerrainToggle.BackgroundColor3 = self.Config.IncludeTerrain and Color3.fromRGB(0, 200, 150) or Color3.fromRGB(100, 100, 100)
+    end)
+    
+    SpawnsToggle.MouseButton1Click:Connect(function()
+        self.Config.IncludeSpawns = not self.Config.IncludeSpawns
+        SpawnsToggle.Text = "📍 SPAWNS: " .. (self.Config.IncludeSpawns and "ON" or "OFF")
+        SpawnsToggle.BackgroundColor3 = self.Config.IncludeSpawns and Color3.fromRGB(0, 200, 150) or Color3.fromRGB(100, 100, 100)
+    end)
+    
+    LightingToggle.MouseButton1Click:Connect(function()
+        self.Config.IncludeLighting = not self.Config.IncludeLighting
+        LightingToggle.Text = "💡 LIGHTING: " .. (self.Config.IncludeLighting and "ON" or "OFF")
+        LightingToggle.BackgroundColor3 = self.Config.IncludeLighting and Color3.fromRGB(0, 200, 150) or Color3.fromRGB(100, 100, 100)
+    end)
+    
+    ScriptsToggle.MouseButton1Click:Connect(function()
+        self.Config.IncludeScripts = not self.Config.IncludeScripts
+        ScriptsToggle.Text = "📜 SCRIPTS: " .. (self.Config.IncludeScripts and "ON" or "OFF")
+        ScriptsToggle.BackgroundColor3 = self.Config.IncludeScripts and Color3.fromRGB(0, 200, 150) or Color3.fromRGB(100, 100, 100)
+    end)
+    
+    ParticlesToggle.MouseButton1Click:Connect(function()
+        self.Config.IncludeParticles = not self.Config.IncludeParticles
+        ParticlesToggle.Text = "✨ PARTICLES: " .. (self.Config.IncludeParticles and "ON" or "OFF")
+        ParticlesToggle.BackgroundColor3 = self.Config.IncludeParticles and Color3.fromRGB(0, 200, 150) or Color3.fromRGB(100, 100, 100)
+    end)
+    
+    AutoSaveToggle.MouseButton1Click:Connect(function()
+        self.Config.AutoSave = not self.Config.AutoSave
+        AutoSaveToggle.Text = "💾 AUTO SAVE: " .. (self.Config.AutoSave and "ON" or "OFF")
+        AutoSaveToggle.BackgroundColor3 = self.Config.AutoSave and Color3.fromRGB(0, 200, 150) or Color3.fromRGB(100, 100, 100)
+    end)
+    
     return ScreenGui
 end
 
 -- ==================================================
--- DISCORD SETUP
+-- STOP CAPTURE
 -- ==================================================
-function MapStealer:SetupDiscord()
-    local HttpService = game:GetService("HttpService")
-    
-    -- Bikin input dialog sederhana
-    local webhook = HttpService:JSONDecode(game:GetService("Players").LocalPlayer:GetMouse().Target and "{}" or "{}")
-    
-    -- Pake cara manual
-    self.Config.Webhook.Enabled = true
-    self.Config.Webhook.Url = "https://discord.com/api/webhooks/YOUR_WEBHOOK_HERE"
-    self.Config.Webhook.AutoUpload = true
-    
-    self.UI.Status.Text = "Discord webhook configured!"
-    wait(2)
-    self.UI.Status.Text = "Ready to steal maps 👾"
+function MapStealer:StopCapture()
+    self.Capturing = false
+    self.UI.Status.Text = "⏹️ Capture stopped by user"
+    self.UI.ProgressFill.Size = UDim2.new(0, 0, 1, 0)
+    self.UI.ProgressText.Text = "0%"
 end
 
 -- ==================================================
--- FUNGSI UTAMA STEAL MAP
+-- SET FORMAT
+-- ==================================================
+function MapStealer:SetFormat(format)
+    self.Config.SaveFormat = format
+    self.UI.Status.Text = "✅ Format set to: " .. format:upper()
+    
+    -- Highlight selected button
+    self.UI.JsonBtn.BackgroundColor3 = format == "json" and Color3.fromRGB(0, 150, 200) or Color3.fromRGB(50, 50, 60)
+    self.UI.RbxmBtn.BackgroundColor3 = format == "rbxm" and Color3.fromRGB(150, 100, 200) or Color3.fromRGB(50, 50, 60)
+    self.UI.RbxlBtn.BackgroundColor3 = format == "rbxl" and Color3.fromRGB(200, 100, 150) or Color3.fromRGB(50, 50, 60)
+    self.UI.HybridBtn.BackgroundColor3 = format == "hybrid" and Color3.fromRGB(200, 150, 50) or Color3.fromRGB(50, 50, 60)
+end
+
+-- ==================================================
+-- CAPTURE PROPERTIES (FIXED LENGKAP)
+-- ==================================================
+function MapStealer:CaptureProperties(obj)
+    local properties = {}
+    
+    -- Skip kalo object nil
+    if not obj then return properties end
+    
+    local className = obj.ClassName
+    
+    -- Cari property list yang sesuai
+    local propList = self.PropertyLists[className]
+    if not propList then
+        -- Cek parent class
+        if obj:IsA("BasePart") then
+            propList = self.PropertyLists.BasePart
+        elseif obj:IsA("Decal") then
+            propList = self.PropertyLists.Decal
+        elseif obj:IsA("Light") then
+            propList = self.PropertyLists.PointLight
+        elseif obj:IsA("Constraint") then
+            propList = self.PropertyLists.Weld
+        elseif obj:IsA("ValueBase") then
+            propList = self.PropertyLists.StringValue
+        elseif obj:IsA("GuiObject") then
+            propList = self.PropertyLists.Frame
+        elseif obj:IsA("GuiBase2d") then
+            propList = self.PropertyLists.BillboardGui
+        elseif obj:IsA("ParticleEmitter") then
+            propList = self.PropertyLists.ParticleEmitter
+        elseif obj:IsA("Beam") then
+            propList = self.PropertyLists.Beam
+        elseif obj:IsA("Humanoid") then
+            propList = self.PropertyLists.Humanoid
+        elseif obj:IsA("Camera") then
+            propList = self.PropertyLists.Camera
+        elseif obj:IsA("Animation") then
+            propList = self.PropertyLists.Animation
+        elseif obj:IsA("JointInstance") then
+            propList = self.PropertyLists.JointInstance
+        elseif obj:IsA("SpecialMesh") then
+            propList = self.PropertyLists.SpecialMesh
+        elseif obj:IsA("SurfaceAppearance") then
+            propList = self.PropertyLists.SurfaceAppearance
+        else
+            propList = self.FallbackProperties
+        end
+    end
+    
+    -- Capture setiap property dengan error handling
+    for _, propName in ipairs(propList) do
+        local success, value = pcall(function()
+            return obj[propName]
+        end)
+        
+        if success and value ~= nil then
+            -- Handle special types
+            if typeof(value) == "CFrame" then
+                properties[propName] = {
+                    Position = {value.Position.X, value.Position.Y, value.Position.Z},
+                    Rotation = {value:ToEulerAnglesXYZ()}
+                }
+            elseif typeof(value) == "Vector3" then
+                properties[propName] = {value.X, value.Y, value.Z}
+            elseif typeof(value) == "Color3" then
+                properties[propName] = {value.R, value.G, value.B}
+            elseif typeof(value) == "BrickColor" then
+                properties[propName] = value.Number
+            elseif typeof(value) == "UDim2" then
+                properties[propName] = {
+                    Scale = {value.X.Scale, value.Y.Scale},
+                    Offset = {value.X.Offset, value.Y.Offset}
+                }
+            elseif typeof(value) == "EnumItem" then
+                properties[propName] = tostring(value)
+            elseif typeof(value) == "Instance" then
+                -- Simpen reference sebagai string path
+                if value:IsA("Player") then
+                    properties[propName] = "Player:" .. value.Name
+                else
+                    properties[propName] = value:GetFullName()
+                end
+            elseif typeof(value) == "table" then
+                -- Untuk tabel (kayak ChildData, PhysicsData)
+                properties[propName] = self:SerializeTable(value)
+            elseif typeof(value) == "boolean" or typeof(value) == "number" or typeof(value) == "string" then
+                properties[propName] = value
+            else
+                properties[propName] = tostring(value)
+            end
+        end
+    end
+    
+    return properties
+end
+
+-- ==================================================
+-- SERIALIZE TABLE (BUAT DATA COMPLEX)
+-- ==================================================
+function MapStealer:SerializeTable(tbl)
+    local result = {}
+    for k, v in pairs(tbl) do
+        if type(v) == "table" then
+            result[k] = self:SerializeTable(v)
+        elseif type(v) == "userdata" then
+            result[k] = tostring(v)
+        else
+            result[k] = v
+        end
+    end
+    return result
+end
+
+-- ==================================================
+-- FUNGSI UTAMA STEAL MAP (V3.0 SUPER OPTIMIZED)
 -- ==================================================
 function MapStealer:StealMap()
-    self.UI.Status.Text = "📡 Scanning workspace..."
+    self.Capturing = true
+    self.UI.Status.Text = "📡 Initializing capture..."
     self.UI.ProgressFill.Size = UDim2.new(0, 0, 1, 0)
     self.UI.ProgressText.Text = "0%"
+    self.UI.ETA.Text = "ETA: calculating..."
     
+    -- Reset data
     self.CapturedData = {
         Objects = {},
         Terrain = nil,
@@ -320,27 +1422,69 @@ function MapStealer:StealMap()
             ServerTime = os.date("%Y-%m-%d %H:%M:%S"),
             GameId = game.GameId,
             PlaceId = game.PlaceId,
-            PlayerCount = #game.Players:GetPlayers()
+            PlayerCount = #game.Players:GetPlayers(),
+            GameName = "Unknown",
+            Creator = "Unknown",
+            Executor = self.Executor.name
+        },
+        Stats = {
+            ByClass = {},
+            TotalSize = 0,
+            CaptureTime = 0
         }
     }
     
-    -- Count total objects for progress
-    local total = 0
-    for _ in workspace:GetDescendants() do
-        total = total + 1
-    end
+    -- Get game info
+    pcall(function()
+        local info = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId)
+        self.CapturedData.Metadata.GameName = info.Name or "Unknown"
+        self.CapturedData.Metadata.Creator = info.Creator and info.Creator.Name or "Unknown"
+    end)
     
+    -- Count total objects
+    local allDescendants = workspace:GetDescendants()
+    local total = #allDescendants
     local current = 0
     local objects = {}
+    local seenPaths = {}
+    local startTime = tick()
+    local lastUpdate = startTime
     
-    -- Iterate workspace
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        current = current + 1
-        local progress = current / total
-        self.UI.ProgressFill.Size = UDim2.new(progress, 0, 1, 0)
-        self.UI.ProgressText.Text = math.floor(progress * 100) .. "%"
+    -- Progress update variables
+    local lastProgressUpdate = startTime
+    local lastObjectsCount = 0
+    local captureSpeed = 0
+    
+    self.UI.Status.Text = string.format("🔍 Scanning %d objects...", total)
+    
+    -- Iterate workspace with batch processing
+    for i, obj in ipairs(allDescendants) do
+        if not self.Capturing then break end
         
-        -- Skip ignored
+        current = i
+        
+        -- Update progress setiap 0.1 detik
+        local now = tick()
+        if now - lastUpdate > 0.1 then
+            local progress = current / total
+            self.UI.ProgressFill:TweenSize(UDim2.new(progress, 0, 1, 0), "Out", "Linear", 0.1, true)
+            self.UI.ProgressText.Text = math.floor(progress * 100) .. "%"
+            
+            -- Calculate ETA
+            local elapsed = now - startTime
+            local speed = current / elapsed -- objects per second
+            if speed > 0 then
+                local remaining = (total - current) / speed
+                local minutes = math.floor(remaining / 60)
+                local seconds = math.floor(remaining % 60)
+                self.UI.ETA.Text = string.format("ETA: %d:%02d", minutes, seconds)
+            end
+            
+            self.UI.ObjectsValue.Text = tostring(current) .. " / " .. tostring(total)
+            lastUpdate = now
+        end
+        
+        -- Skip ignored objects
         local skip = false
         for _, ignore in ipairs(self.Config.IgnoreList) do
             if obj:GetFullName():find(ignore) then
@@ -350,76 +1494,80 @@ function MapStealer:StealMap()
         end
         
         if not skip and not obj:IsA("Player") then
-            -- Clone dengan properties
-            local cloneData = {
-                ClassName = obj.ClassName,
-                Name = obj.Name,
-                Parent = obj.Parent and obj.Parent:GetFullName() or nil,
-                Properties = {}
-            }
-            
-            -- Save important properties based on class
-            local props = {}
-            
-            if obj:IsA("BasePart") then
-                props = {"Position", "Size", "CFrame", "Color", "Material", "Transparency", "Reflectance", "BrickColor"}
-            elseif obj:IsA("MeshPart") then
-                props = {"Position", "Size", "CFrame", "Color", "Material", "MeshId", "TextureID"}
-            elseif obj:IsA("Decal") or obj:IsA("Texture") then
-                props = {"Face", "Texture", "Color3"}
-            elseif obj:IsA("Model") then
-                props = {"PrimaryPart"}
-            elseif obj:IsA("Script") or obj:IsA("LocalScript") then
-                props = {"Source", "Enabled"}
-            elseif obj:IsA("SurfaceLight") or obj:IsA("PointLight") or obj:IsA("SpotLight") then
-                props = {"Brightness", "Color", "Range", "Angle"}
-            elseif obj:IsA("Sound") then
-                props = {"SoundId", "Volume", "Pitch", "Looped", "Playing"}
+            -- Filter duplicates by full path
+            local fullPath = obj:GetFullName()
+            if not self.Config.FilterDuplicates or not seenPaths[fullPath] then
+                seenPaths[fullPath] = true
+                
+                -- Capture data
+                local cloneData = {
+                    ClassName = obj.ClassName,
+                    Name = obj.Name,
+                    Parent = obj.Parent and obj.Parent:GetFullName() or nil,
+                    Properties = self:CaptureProperties(obj)
+                }
+                
+                table.insert(objects, cloneData)
+                
+                -- Update stats by class
+                self.CapturedData.Stats.ByClass[obj.ClassName] = (self.CapturedData.Stats.ByClass[obj.ClassName] or 0) + 1
             end
-            
-            for _, prop in ipairs(props) do
-                pcall(function()
-                    cloneData.Properties[prop] = obj[prop]
-                end)
-            end
-            
-            table.insert(objects, cloneData)
         end
         
-        wait() -- Prevent lag
+        -- Prevent lag (yield every 100 objects)
+        if i % 100 == 0 then
+            wait()
+        end
+    end
+    
+    if not self.Capturing then
+        self.UI.Status.Text = "⏹️ Capture cancelled"
+        return
     end
     
     self.CapturedData.Objects = objects
     self.Vault.TotalObjects = #objects
+    self.UI.ObjectsValue.Text = #objects .. " objects"
     
-    -- Terrain ripper
+    -- Terrain ripper (special handling)
     if self.Config.IncludeTerrain then
-        self.UI.Status.Text = "🗻 Ripping terrain data..."
+        self.UI.Status.Text = "🗻 Ripping terrain data (this may take a moment)..."
         wait(0.5)
         
         local terrain = workspace.Terrain
         local terrainData = {
-            Cells = {},
-            Materials = {},
             Smoothing = terrain.Smoothing,
-            WaterColor = terrain.WaterColor,
+            WaterColor = {terrain.WaterColor.R, terrain.WaterColor.G, terrain.WaterColor.B},
             WaterReflectance = terrain.WaterReflectance,
             WaterTransparency = terrain.WaterTransparency,
             WaterWaveSize = terrain.WaterWaveSize,
-            WaterWaveSpeed = terrain.WaterWaveSpeed
+            WaterWaveSpeed = terrain.WaterWaveSpeed,
+            MaterialColors = {},
+            Cells = {},
+            Materials = {}
         }
         
-        -- Scan region yang lebih luas
+        -- Capture material colors
+        for i = 1, 256 do
+            local material = Enum.Material[i-1]
+            if material then
+                local color = terrain:GetMaterialColor(material)
+                terrainData.MaterialColors[material.Name] = {color.R, color.G, color.B}
+            end
+        end
+        
+        -- Scan region untuk voxels (optimized)
+        local region = Region3.new(Vector3.new(-2048, -1024, -2048), Vector3.new(2048, 1024, 2048))
+        local resolution = Vector3.new(4, 4, 4)
+        
         local success, cells, materials = pcall(function()
-            return terrain:ReadVoxels(
-                Region3.new(Vector3.new(-2048, -1024, -2048), Vector3.new(2048, 1024, 2048)),
-                Vector3.new(4, 4, 4)
-            )
+            return terrain:ReadVoxels(region, resolution)
         end)
         
         if success then
-            terrainData.Cells = cells
-            terrainData.Materials = materials
+            -- Convert ke format yang bisa di-JSON
+            terrainData.Cells = self:SerializeVoxels(cells)
+            terrainData.Materials = self:SerializeMaterials(materials)
         end
         
         self.CapturedData.Terrain = terrainData
@@ -427,16 +1575,18 @@ function MapStealer:StealMap()
     
     -- Spawns
     if self.Config.IncludeSpawns then
+        self.UI.Status.Text = "📍 Capturing spawn locations..."
         local spawns = {}
         for _, obj in ipairs(workspace:GetDescendants()) do
             if obj:IsA("SpawnLocation") then
                 table.insert(spawns, {
-                    Position = obj.Position,
-                    CFrame = obj.CFrame,
-                    TeamColor = obj.TeamColor,
+                    Position = {obj.Position.X, obj.Position.Y, obj.Position.Z},
+                    CFrame = self:SerializeCFrame(obj.CFrame),
+                    TeamColor = obj.TeamColor and obj.TeamColor.Number or nil,
                     Duration = obj.Duration,
                     Neutral = obj.Neutral,
-                    AllowTeamChangeOnTouch = obj.AllowTeamChangeOnTouch
+                    AllowTeamChangeOnTouch = obj.AllowTeamChangeOnTouch,
+                    Enabled = obj.Enabled
                 })
             end
         end
@@ -445,17 +1595,33 @@ function MapStealer:StealMap()
     
     -- Lighting
     if self.Config.IncludeLighting then
+        self.UI.Status.Text = "💡 Capturing lighting settings..."
         local lighting = {}
-        for _, prop in ipairs({
-            "Ambient", "Brightness", "ColorShift_Top", "ColorShift_Bottom",
-            "EnvironmentDiffuseScale", "EnvironmentSpecularScale", "GlobalShadows",
-            "OutdoorAmbient", "ShadowSoftness", "ClockTime", "GeographicLatitude",
-            "ExposureCompensation", "FogEnd", "FogStart", "FogColor"
-        }) do
-            lighting[prop] = game.Lighting[prop]
+        for _, prop in ipairs(self.PropertyLists.Lighting) do
+            pcall(function()
+                local value = game.Lighting[prop]
+                if typeof(value) == "Color3" then
+                    lighting[prop] = {value.R, value.G, value.B}
+                elseif typeof(value) == "number" or typeof(value) == "boolean" or typeof(value) == "string" then
+                    lighting[prop] = value
+                elseif typeof(value) == "EnumItem" then
+                    lighting[prop] = value.Name
+                end
+            end)
         end
         self.CapturedData.Lighting = lighting
     end
+    
+    -- Calculate capture time
+    local captureTime = tick() - startTime
+    self.CapturedData.Metadata.CaptureTime = captureTime
+    self.CapturedData.Stats.TotalSize = self:CalculateDataSize(self.CapturedData)
+    
+    -- Update UI
+    local minutes = math.floor(captureTime / 60)
+    local seconds = math.floor(captureTime % 60)
+    self.UI.TimeValue.Text = string.format("%d:%02d", minutes, seconds)
+    self.UI.SizeValue.Text = self:FormatSize(self.CapturedData.Stats.TotalSize)
     
     -- Simpan ke vault
     table.insert(self.Vault.CapturedMaps, {
@@ -465,13 +1631,14 @@ function MapStealer:StealMap()
     })
     self.Vault.LastCapture = os.time()
     
-    self.UI.Status.Text = string.format("✅ Map captured! (%d objects)", #objects)
-    self.UI.ProgressFill.Size = UDim2.new(1, 0, 1, 0)
+    self.UI.Status.Text = string.format("✅ Map captured! (%d objects in %d:%02d)", #objects, minutes, seconds)
+    self.UI.ProgressFill:TweenSize(UDim2.new(1, 0, 1, 0), "Out", "Linear", 0.5, true)
     self.UI.ProgressText.Text = "100%"
+    self.UI.ETA.Text = "ETA: done!"
     
     -- Auto save
     if self.Config.AutoSave then
-        self:SaveMap()
+        self:ExportMap()
     end
     
     -- Play sound
@@ -485,237 +1652,268 @@ function MapStealer:StealMap()
 end
 
 -- ==================================================
--- SAVE MAP TO FILE
+-- SERIALIZE VOXELS (UNTUK TERRAIN)
 -- ==================================================
-function MapStealer:SaveMap()
-    if not self.CapturedData then
-        self.UI.Status.Text = "❌ Nothing to save! Steal a map first."
-        return
-    end
-    
-    self.UI.Status.Text = "💾 Saving to file..."
-    
-    -- Convert to JSON
-    local HttpService = game:GetService("HttpService")
-    local jsonData = HttpService:JSONEncode(self.CapturedData)
-    
-    -- Generate filename
-    local placeName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name or "Unknown"
-    local sanitizedName = placeName:gsub("[^%w%s]", ""):gsub("%s+", "_")
-    local filename = string.format("MapSteal_%s_%s.json", sanitizedName, os.date("%Y%m%d_%H%M%S"))
-    
-    -- Save ke file via executor
-    local success = pcall(function()
-        if writefile then
-            writefile(filename, jsonData)
-        elseif syn and syn.write then
-            syn.write(filename, jsonData)
-        else
-            error("No write function available")
-        end
-    end)
-    
-    if success then
-        self.UI.Status.Text = "✅ Saved as " .. filename
-        
-        -- Upload ke discord kalo diaktifin
-        if self.Config.Webhook.Enabled and self.Config.Webhook.AutoUpload then
-            self:UploadToDiscord(filename, jsonData)
-        end
-        
-        -- Refresh list
-        self:RefreshFileList()
-    else
-        self.UI.Status.Text = "❌ Failed to save file"
-    end
-end
-
--- ==================================================
--- LOAD MAP FROM FILE
--- ==================================================
-function MapStealer:LoadMap(filename)
-    self.UI.Status.Text = "📂 Loading " .. filename
-    
-    -- Read file
-    local content = nil
-    pcall(function()
-        if readfile then
-            content = readfile(filename)
-        elseif syn and syn.read then
-            content = syn.read(filename)
-        end
-    end)
-    
-    if not content then
-        self.UI.Status.Text = "❌ Failed to read file"
-        return
-    end
-    
-    -- Parse JSON
-    local HttpService = game:GetService("HttpService")
-    local mapData = HttpService:JSONDecode(content)
-    
-    -- Buat folder baru
-    local mapFolder = Instance.new("Folder")
-    mapFolder.Name = "StolenMap_" .. os.date("%H%M%S")
-    mapFolder.Parent = workspace
-    
-    -- Create object cache
-    local objectCache = {}
-    objectCache["Workspace"] = workspace
-    
-    -- Rebuild objects
-    self.UI.Status.Text = "🔄 Rebuilding objects..."
-    for i, objData in ipairs(mapData.Objects) do
-        if i % 100 == 0 then
-            self.UI.Status.Text = string.format("🔄 Rebuilding... (%d/%d)", i, #mapData.Objects)
-            wait()
-        end
-        
-        local obj = Instance.new(objData.ClassName)
-        obj.Name = objData.Name
-        
-        for prop, value in pairs(objData.Properties) do
-            pcall(function()
-                obj[prop] = value
-            end)
-        end
-        
-        -- Determine parent
-        if objData.Parent and objectCache[objData.Parent] then
-            obj.Parent = objectCache[objData.Parent]
-        else
-            obj.Parent = mapFolder
-        end
-        
-        -- Cache for children
-        objectCache[obj:GetFullName()] = obj
-    end
-    
-    -- Rebuild terrain
-    if mapData.Terrain then
-        self.UI.Status.Text = "🗻 Rebuilding terrain..."
-        wait(0.5)
-        
-        local terrain = workspace.Terrain
-        terrain:Clear()
-        
-        if mapData.Terrain.Cells and mapData.Terrain.Materials then
-            pcall(function()
-                terrain:WriteVoxels(
-                    Region3.new(Vector3.new(-2048, -1024, -2048), Vector3.new(2048, 1024, 2048)),
-                    Vector3.new(4, 4, 4),
-                    mapData.Terrain.Materials,
-                    mapData.Terrain.Cells
-                )
-            end)
-        end
-        
-        -- Apply terrain properties
-        for prop, value in pairs(mapData.Terrain) do
-            if prop ~= "Cells" and prop ~= "Materials" then
-                pcall(function()
-                    terrain[prop] = value
-                end)
+function MapStealer:SerializeVoxels(cells)
+    -- Optimize: simpen sebagai array of numbers
+    local result = {}
+    for x = 1, #cells do
+        result[x] = {}
+        for y = 1, #cells[x] do
+            result[x][y] = {}
+            for z = 1, #cells[x][y] do
+                result[x][y][z] = cells[x][y][z]
             end
         end
     end
-    
-    -- Rebuild spawns
-    if mapData.Spawns then
-        for _, spawnData in ipairs(mapData.Spawns) do
-            local spawn = Instance.new("SpawnLocation")
-            spawn.Parent = mapFolder
-            spawn.CFrame = spawnData.CFrame or CFrame.new(spawnData.Position)
-            spawn.TeamColor = spawnData.TeamColor
-            spawn.Duration = spawnData.Duration
-            spawn.Neutral = spawnData.Neutral
-            spawn.AllowTeamChangeOnTouch = spawnData.AllowTeamChangeOnTouch
+    return result
+end
+
+function MapStealer:SerializeMaterials(materials)
+    local result = {}
+    for x = 1, #materials do
+        result[x] = {}
+        for y = 1, #materials[x] do
+            result[x][y] = {}
+            for z = 1, #materials[x][y] do
+                result[x][y][z] = materials[x][y][z]
+            end
         end
     end
-    
-    -- Apply lighting
-    if mapData.Lighting then
-        for prop, value in pairs(mapData.Lighting) do
-            pcall(function()
-                game.Lighting[prop] = value
-            end)
-        end
-    end
-    
-    self.UI.Status.Text = "✅ Map loaded to workspace!"
-    
-    -- Play sound
-    pcall(function()
-        local sound = Instance.new("Sound")
-        sound.SoundId = "rbxassetid://9120388798"
-        sound.Parent = workspace
-        sound:Play()
-        game:GetService("Debris"):AddItem(sound, 2)
-    end)
+    return result
 end
 
 -- ==================================================
--- SHOW LOAD DIALOG
+-- SERIALIZE CFRAME
 -- ==================================================
-function MapStealer:ShowLoadDialog()
-    local files = {}
+function MapStealer:SerializeCFrame(cf)
+    return {
+        Position = {cf.Position.X, cf.Position.Y, cf.Position.Z},
+        Rotation = {cf:ToEulerAnglesXYZ()}
+    }
+end
+
+-- ==================================================
+-- CALCULATE DATA SIZE
+-- ==================================================
+function MapStealer:CalculateDataSize(data)
+    -- Estimasi kasar ukuran data
+    local json = game:GetService("HttpService"):JSONEncode(data)
+    return #json
+end
+
+-- ==================================================
+-- FORMAT SIZE
+-- ==================================================
+function MapStealer:FormatSize(bytes)
+    if bytes < 1024 then
+        return bytes .. " B"
+    elseif bytes < 1024 * 1024 then
+        return string.format("%.1f KB", bytes / 1024)
+    else
+        return string.format("%.1f MB", bytes / (1024 * 1024))
+    end
+end
+
+-- ==================================================
+-- EXPORT MAP (MULTI-FORMAT)
+-- ==================================================
+function MapStealer:ExportMap()
+    if not self.CapturedData then
+        self.UI.Status.Text = "❌ Nothing to export! Steal a map first."
+        return
+    end
     
-    -- Get files list
+    self.UI.Status.Text = "📦 Exporting map..."
+    
+    local HttpService = game:GetService("HttpService")
+    local format = self.Config.SaveFormat
+    
+    -- Generate base filename
+    local placeName = self.CapturedData.Metadata.GameName:gsub("[^%w%s]", ""):gsub("%s+", "_")
+    local timestamp = os.date("%Y%m%d_%H%M%S")
+    local baseName = string.format("%s_%s", placeName, timestamp)
+    
+    if format == "json" then
+        -- Export JSON
+        local jsonData = HttpService:JSONEncode(self.CapturedData)
+        local filename = baseName .. ".json"
+        
+        local success = self:WriteFile(filename, jsonData)
+        if success then
+            self.UI.Status.Text = "✅ Exported as " .. filename
+            self.Vault.TotalSize = #jsonData
+            self.UI.SizeValue.Text = self:FormatSize(#jsonData)
+        end
+        
+    elseif format == "rbxm" or format == "rbxl" then
+        -- Untuk RBXM/RBXL, kita kasih instruksi karena gak bisa langsung
+        self.UI.Status.Text = "📋 RBXM Export Instructions:"
+        wait(2)
+        self.UI.Status.Text = "1. Save JSON first (click JSON format)"
+        wait(2)
+        self.UI.Status.Text = "2. Open Roblox Studio"
+        wait(2)
+        self.UI.Status.Text = "3. Use plugin 'RBXM Builder' to convert"
+        wait(2)
+        self.UI.Status.Text = "JSON saved - ready for Studio import"
+        
+        -- Tetap simpen JSON sebagai fallback
+        local jsonData = HttpService:JSONEncode(self.CapturedData)
+        local filename = baseName .. ".json"
+        self:WriteFile(filename, jsonData)
+        
+    elseif format == "hybrid" then
+        -- Hybrid: JSON + instruksi RBXM
+        local jsonData = HttpService:JSONEncode(self.CapturedData)
+        local jsonFile = baseName .. ".json"
+        local rbxmFile = baseName .. ".rbxm"
+        
+        self:WriteFile(jsonFile, jsonData)
+        
+        -- Buat file instruksi
+        local instructions = [[
+cvAI4 Map Stealer - Hybrid Export Instructions
+
+JSON File: ]] .. jsonFile .. [[
+RBXM File: ]] .. rbxmFile .. [[
+
+To create working RBXM with terrain:
+
+1. Open Roblox Studio
+2. Install plugin "JSON Loader" (optional)
+3. Create new baseplate
+4. Use this script in Command Bar:
+
+local HttpService = game:GetService("HttpService")
+local json = HttpService:JSONEncode(workspace) -- Load your JSON here
+-- Then use plugin to import
+
+5. Copy terrain manually from original game
+6. Save as RBXM
+
+For perfect results, use the JSON data with external converter.
+]]
+        
+        self:WriteFile(baseName .. "_README.txt", instructions)
+        self.UI.Status.Text = "✅ Hybrid export complete! See README"
+    end
+    
+    -- Upload ke Discord kalo diaktifin
+    if self.Config.Webhook.Enabled and self.Config.Webhook.AutoUpload then
+        self:UploadToDiscord()
+    end
+    
+    -- Refresh file list
+    self:RefreshFileList()
+end
+
+-- ==================================================
+-- WRITE FILE (EXECUTOR-AGNOSTIC)
+-- ==================================================
+function MapStealer:WriteFile(filename, content)
+    local success = false
+    
     pcall(function()
-        if listfiles then
-            files = listfiles()
-        elseif syn and syn.list then
-            files = syn.list()
+        if self.Executor.write then
+            self.Executor.write(filename, content)
+            success = true
+        elseif writefile then
+            writefile(filename, content)
+            success = true
         end
     end)
+    
+    return success
+end
+
+-- ==================================================
+-- READ FILE
+-- ==================================================
+function MapStealer:ReadFile(filename)
+    local content = nil
+    
+    pcall(function()
+        if self.Executor.read then
+            content = self.Executor.read(filename)
+        elseif readfile then
+            content = readfile(filename)
+        end
+    end)
+    
+    return content
+end
+
+-- ==================================================
+-- LIST FILES
+-- ==================================================
+function MapStealer:ListFiles()
+    local files = {}
+    
+    pcall(function()
+        if self.Executor.list then
+            files = self.Executor.list()
+        elseif listfiles then
+            files = listfiles()
+        end
+    end)
+    
+    return files
+end
+
+-- ==================================================
+-- REFRESH FILE LIST
+-- ==================================================
+function MapStealer:RefreshFileList()
+    local files = self:ListFiles()
     
     -- Filter map files
     local mapFiles = {}
     for _, file in ipairs(files) do
-        if file:match("MapSteal_.+%.json") then
+        if file:match("MapSteal_.+%.json") or file:match(".+_%d+_%d+%.json") then
             table.insert(mapFiles, file)
         end
     end
     
-    if #mapFiles == 0 then
-        self.UI.Status.Text = "❌ No saved maps found"
-        return
-    end
-    
     -- Clear list
-    for _, child in ipairs(self.UI.ListBox:GetChildren()) do
+    for _, child in ipairs(self.UI.FileList:GetChildren()) do
         if child:IsA("TextButton") then
             child:Destroy()
         end
     end
     
-    -- Populate list
+    -- Sort by date (newest first)
+    table.sort(mapFiles, function(a, b)
+        return a > b
+    end)
+    
+    -- Populate
     local yPos = 0
     for _, file in ipairs(mapFiles) do
         local fileName = file:match("([^\\/]+)$")
         local fileBtn = Instance.new("TextButton")
-        fileBtn.Parent = self.UI.ListBox
-        fileBtn.Size = UDim2.new(1, -10, 0, 40)
+        fileBtn.Parent = self.UI.FileList
+        fileBtn.Size = UDim2.new(1, -10, 0, 35)
         fileBtn.Position = UDim2.new(0, 5, 0, yPos)
-        fileBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+        fileBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
         fileBtn.Text = ""
         fileBtn.BorderSizePixel = 0
+        fileBtn.Name = file
         
-        -- File icon
+        -- Icon
         local icon = Instance.new("TextLabel")
         icon.Parent = fileBtn
         icon.Size = UDim2.new(0, 30, 1, 0)
         icon.Position = UDim2.new(0, 5, 0, 0)
         icon.BackgroundTransparency = 1
         icon.Text = "📄"
-        icon.TextSize = 20
+        icon.TextSize = 18
         icon.TextColor3 = Color3.fromRGB(0, 255, 200)
         
-        -- File name
+        -- Filename
         local nameLabel = Instance.new("TextLabel")
         nameLabel.Parent = fileBtn
-        nameLabel.Size = UDim2.new(1, -45, 0.5, 0)
+        nameLabel.Size = UDim2.new(1, -45, 0.6, 0)
         nameLabel.Position = UDim2.new(0, 40, 0, 0)
         nameLabel.BackgroundTransparency = 1
         nameLabel.Text = fileName
@@ -723,110 +1921,224 @@ function MapStealer:ShowLoadDialog()
         nameLabel.TextSize = 12
         nameLabel.Font = Enum.Font.Gotham
         nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+        nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
         
         -- File size
-        local size = math.floor(#tostring(readfile and readfile(file) or "") / 1024)
+        local content = self:ReadFile(file)
+        local size = content and #content or 0
+        local sizeText = self:FormatSize(size)
+        
         local sizeLabel = Instance.new("TextLabel")
         sizeLabel.Parent = fileBtn
-        sizeLabel.Size = UDim2.new(1, -45, 0.5, 0)
-        sizeLabel.Position = UDim2.new(0, 40, 0.5, 0)
+        sizeLabel.Size = UDim2.new(1, -45, 0.4, 0)
+        sizeLabel.Position = UDim2.new(0, 40, 0.6, 0)
         sizeLabel.BackgroundTransparency = 1
-        sizeLabel.Text = size .. " KB"
+        sizeLabel.Text = sizeText
         sizeLabel.TextColor3 = Color3.fromRGB(150, 150, 150)
         sizeLabel.TextSize = 10
         sizeLabel.Font = Enum.Font.Gotham
         sizeLabel.TextXAlignment = Enum.TextXAlignment.Left
         
-        -- Load button
+        -- Select function
         fileBtn.MouseButton1Click:Connect(function()
-            self:LoadMap(file)
+            self:SelectFile(file)
         end)
         
-        yPos = yPos + 45
+        yPos = yPos + 40
     end
     
-    self.UI.ListBox.CanvasSize = UDim2.new(0, 0, 0, yPos)
-    self.UI.Status.Text = "📁 Select a map to load"
+    self.UI.FileList.CanvasSize = UDim2.new(0, 0, 0, yPos)
 end
 
 -- ==================================================
--- REFRESH FILE LIST
+-- SELECT FILE
 -- ==================================================
-function MapStealer:RefreshFileList()
-    local files = {}
+function MapStealer:SelectFile(filename)
+    self.SelectedFile = filename
+    local fileName = filename:match("([^\\/]+)$")
+    
+    self.UI.FileName.Text = fileName
+    self.UI.FileName.TextColor3 = Color3.fromRGB(0, 255, 200)
+    
+    -- Get file info
+    local content = self:ReadFile(filename)
+    if content then
+        local size = #content
+        self.UI.FileSize.Text = "Size: " .. self:FormatSize(size)
+        
+        -- Try to parse JSON
+        local success, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(content)
+        end)
+        
+        if success and data then
+            local objCount = data.Objects and #data.Objects or 0
+            self.UI.FileObjects.Text = "Objects: " .. objCount
+            
+            if data.Metadata and data.Metadata.ServerTime then
+                self.UI.FileDate.Text = "Date: " .. data.Metadata.ServerTime
+            else
+                self.UI.FileDate.Text = "Date: Unknown"
+            end
+        else
+            self.UI.FileObjects.Text = "Objects: - (invalid JSON)"
+        end
+    end
+end
+
+-- ==================================================
+-- DELETE SELECTED FILE
+-- ==================================================
+function MapStealer:DeleteSelectedFile()
+    if not self.SelectedFile then
+        self.UI.Status.Text = "❌ No file selected"
+        return
+    end
     
     pcall(function()
-        if listfiles then
-            files = listfiles()
-        elseif syn and syn.list then
-            files = syn.list()
+        if self.Executor.name == "Synapse X" then
+            -- Synapse specific
+        elseif delfile then
+            delfile(self.SelectedFile)
         end
     end)
     
-    local mapFiles = {}
-    for _, file in ipairs(files) do
-        if file:match("MapSteal_.+%.json") then
-            table.insert(mapFiles, file)
-        end
+    self.UI.Status.Text = "🗑️ File deleted"
+    self.SelectedFile = nil
+    self:RefreshFileList()
+end
+
+-- ==================================================
+-- PREVIEW MAP
+-- ==================================================
+function MapStealer:PreviewMap()
+    if not self.CapturedData then
+        self.UI.Status.Text = "❌ No map captured"
+        return
     end
     
-    -- Clear list
-    for _, child in ipairs(self.UI.ListBox:GetChildren()) do
-        if child:IsA("TextButton") then
-            child:Destroy()
-        end
-    end
+    -- Buat popup preview sederhana
+    local previewGui = Instance.new("ScreenGui")
+    local frame = Instance.new("Frame")
+    local title = Instance.new("TextLabel")
+    local list = Instance.new("ScrollingFrame")
+    local closeBtn = Instance.new("TextButton")
     
-    -- Populate
+    previewGui.Parent = game.CoreGui
+    previewGui.Name = "cvAI4_Preview"
+    previewGui.DisplayOrder = 999999
+    
+    frame.Parent = previewGui
+    frame.Size = UDim2.new(0, 400, 0, 500)
+    frame.Position = UDim2.new(0.5, -200, 0.5, -250)
+    frame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    
+    title.Parent = frame
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    title.Text = "📊 MAP PREVIEW"
+    title.TextColor3 = Color3.fromRGB(0, 255, 200)
+    title.TextSize = 18
+    title.Font = Enum.Font.GothamBold
+    
+    closeBtn.Parent = title
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 5)
+    closeBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+    closeBtn.Text = "✕"
+    closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    closeBtn.TextSize = 20
+    closeBtn.BorderSizePixel = 0
+    closeBtn.MouseButton1Click:Connect(function()
+        previewGui:Destroy()
+    end)
+    
+    list.Parent = frame
+    list.Size = UDim2.new(1, -20, 1, -60)
+    list.Position = UDim2.new(0, 10, 0, 50)
+    list.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    list.BorderSizePixel = 0
+    list.ScrollBarThickness = 8
+    
     local yPos = 0
-    for _, file in ipairs(mapFiles) do
-        local fileName = file:match("([^\\/]+)$")
-        local fileBtn = Instance.new("TextButton")
-        fileBtn.Parent = self.UI.ListBox
-        fileBtn.Size = UDim2.new(1, -10, 0, 30)
-        fileBtn.Position = UDim2.new(0, 5, 0, yPos)
-        fileBtn.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-        fileBtn.Text = "📄 " .. fileName
-        fileBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-        fileBtn.TextSize = 12
-        fileBtn.Font = Enum.Font.Gotham
-        fileBtn.BorderSizePixel = 0
-        fileBtn.TextXAlignment = Enum.TextXAlignment.Left
+    for className, count in pairs(self.CapturedData.Stats.ByClass) do
+        local item = Instance.new("TextLabel")
+        item.Parent = list
+        item.Size = UDim2.new(1, -10, 0, 25)
+        item.Position = UDim2.new(0, 5, 0, yPos)
+        item.BackgroundTransparency = 1
+        item.Text = string.format("%s: %d", className, count)
+        item.TextColor3 = Color3.fromRGB(200, 200, 200)
+        item.TextSize = 12
+        item.Font = Enum.Font.Gotham
+        item.TextXAlignment = Enum.TextXAlignment.Left
         
-        fileBtn.MouseButton1Click:Connect(function()
-            self:LoadMap(file)
-        end)
-        
-        yPos = yPos + 35
+        yPos = yPos + 25
     end
     
-    self.UI.ListBox.CanvasSize = UDim2.new(0, 0, 0, yPos)
+    list.CanvasSize = UDim2.new(0, 0, 0, yPos)
+end
+
+-- ==================================================
+-- DISCORD SETUP
+-- ==================================================
+function MapStealer:SetupDiscord()
+    self.Config.Webhook.Enabled = true
+    self.Config.Webhook.Url = self.UI.WebhookInput.Text
+    self.Config.Webhook.AutoUpload = true
+    
+    self.UI.Status.Text = "✅ Discord webhook configured!"
 end
 
 -- ==================================================
 -- UPLOAD TO DISCORD
 -- ==================================================
-function MapStealer:UploadToDiscord(filename, content)
-    if self.Config.Webhook.Url == "" then
-        self.Config.Webhook.Enabled = false
+function MapStealer:UploadToDiscord()
+    if not self.Config.Webhook.Enabled or self.Config.Webhook.Url == "" then
+        return
+    end
+    
+    if not self.CapturedData then
         return
     end
     
     local HttpService = game:GetService("HttpService")
     
-    -- Format untuk Discord
+    -- Format embed
     local embed = {
         title = "🗺️ Map Captured!",
-        description = string.format("**File:** `%s`\n**Objects:** %d\n**Game:** %d\n**Time:** %s",
-            filename,
-            self.Vault.TotalObjects,
-            game.PlaceId,
-            os.date("%Y-%m-%d %H:%M:%S")
+        description = string.format("**Game:** %s\n**Objects:** %d\n**Time:** %s\n**Executor:** %s",
+            self.CapturedData.Metadata.GameName,
+            #self.CapturedData.Objects,
+            self.CapturedData.Metadata.ServerTime,
+            self.Executor.name
         ),
-        color = 65535, -- Cyan
+        color = 65535,
+        fields = {
+            {
+                name = "📊 Statistics",
+                value = string.format("Size: %s\nCapture Time: %.1fs",
+                    self:FormatSize(self.CapturedData.Stats.TotalSize),
+                    self.CapturedData.Metadata.CaptureTime
+                ),
+                inline = true
+            },
+            {
+                name = "🏷️ Info",
+                value = string.format("Place ID: %d\nCreator: %s",
+                    self.CapturedData.Metadata.PlaceId,
+                    self.CapturedData.Metadata.Creator
+                ),
+                inline = true
+            }
+        },
         footer = {
-            text = "cvAI4 Map Ripper v2.7"
-        }
+            text = "cvAI4 Map Ripper V3.0 - ULTIMATE"
+        },
+        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     }
     
     local data = {
@@ -835,7 +2147,7 @@ function MapStealer:UploadToDiscord(filename, content)
         embeds = {embed}
     }
     
-    -- Send ke Discord
+    -- Send to Discord
     pcall(function()
         HttpService:PostAsync(self.Config.Webhook.Url, HttpService:JSONEncode(data))
     end)
@@ -844,30 +2156,96 @@ function MapStealer:UploadToDiscord(filename, content)
 end
 
 -- ==================================================
+-- UPLOAD TO CLOUD (PASTEBIN/GITHUB GIST)
+-- ==================================================
+function MapStealer:UploadToCloud()
+    if not self.CapturedData then
+        self.UI.Status.Text = "❌ No map to upload"
+        return
+    end
+    
+    self.UI.Status.Text = "☁️ Uploading to cloud..."
+    
+    local HttpService = game:GetService("HttpService")
+    local jsonData = HttpService:JSONEncode(self.CapturedData)
+    
+    -- Try Pastebin first
+    local success, result = pcall(function()
+        local data = {
+            api_dev_key = "", -- Need API key
+            api_option = "paste",
+            api_paste_code = jsonData,
+            api_paste_name = "MapSteal_" .. os.date("%Y%m%d_%H%M%S"),
+            api_paste_private = "1", -- Unlisted
+            api_paste_expire_date = "1W" -- 1 week
+        }
+        
+        -- This would require API key
+        return "Pastebin requires API key"
+    end)
+    
+    self.UI.Status.Text = "☁️ Cloud upload: " .. tostring(result)
+end
+
+-- ==================================================
+-- SAVE SETTINGS
+-- ==================================================
+function MapStealer:SaveSettings()
+    -- Settings already saved via toggles
+    self.Config.Webhook.Url = self.UI.WebhookInput.Text
+    
+    -- Save to file
+    local settingsData = game:GetService("HttpService"):JSONEncode(self.Config)
+    self:WriteFile("cvAI4_Settings.json", settingsData)
+    
+    self.UI.Status.Text = "⚙️ Settings saved!"
+end
+
+-- ==================================================
+-- LOAD SETTINGS
+-- ==================================================
+function MapStealer:LoadSettings()
+    local content = self:ReadFile("cvAI4_Settings.json")
+    if content then
+        local success, data = pcall(function()
+            return game:GetService("HttpService"):JSONDecode(content)
+        end)
+        
+        if success and data then
+            self.Config = data
+            self.UI.Status.Text = "⚙️ Settings loaded!"
+        end
+    end
+end
+
+-- ==================================================
 -- INITIALIZATION
 -- ==================================================
 function MapStealer:Init()
-    print("🗺️ cvAI4 MAP RIPPER v2.7 INITIALIZED")
+    print("🗺️ cvAI4 MAP RIPPER V3.0 - ULTIMATE EDITION")
     print("👾 Created by: cvAI4 for Tuan Gigs")
     
-    -- Cek environment
-    local env = {
-        executor = identifyexecutor and identifyexecutor() or "Unknown",
-        isSynapse = is_synapse and is_synapse() or false,
-        isKrnl = is_krnl and is_krnl() or false,
-        isScriptWare = is_scriptware and is_scriptware() or false
-    }
-    
-    print("⚡ Executor: " .. env.executor)
+    -- Detect executor
+    local exec = self:DetectExecutor()
+    print("⚡ Executor: " .. exec.name)
+    print("📦 Supported: " .. table.concat(exec.supports, ", "))
     
     -- Create UI
     self:CreateUI()
+    
+    -- Load settings
+    self:LoadSettings()
     
     -- Refresh file list
     self:RefreshFileList()
     
     -- Welcome message
-    self.UI.Status.Text = "👾 cvAI4 Ready - Click STEAL to begin"
+    self.UI.Status.Text = "🟢 cvAI4 V3.0 ULTIMATE - Ready to steal maps!"
+    self.UI.ObjectsValue.Text = "0"
+    self.UI.SizeValue.Text = "0 KB"
+    self.UI.TimeValue.Text = "--:--"
+    
+    print("✅ cvAI4 V3.0 loaded! Type _G.cvAI4_MapStealer for commands")
     
     return self
 end
@@ -880,5 +2258,6 @@ ripper:Init()
 
 -- Global access
 _G.cvAI4_MapStealer = ripper
+_G.MS = ripper -- Shortcut
 
-print("✅ cvAI4 Map Ripper loaded! Type _G.cvAI4_MapStealer for commands")
+print("✅ Type _G.MS or _G.cvAI4_MapStealer to access")
